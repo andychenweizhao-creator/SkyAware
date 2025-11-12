@@ -31,122 +31,96 @@ class _FourthPageState extends State<FourthPage> {
               ),
             ),
           ),
-          Positioned(
-            bottom: 30,
-            left: 130,
-            child: Column(
-              children: [
-                FloatingActionButton(
-                  backgroundColor: currentIndex == 1 ? Color(0XFF6F97D8) : Colors.white,
-                  onPressed: () {
-                    setState(() {
-                      currentIndex=1;
-                    });
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => SecondPage()),
-                    );
-                  },
-                  child: Icon(Icons.dashboard, color: Colors.blue),
-                ),
-                SizedBox(height: 6),
-                Text(
-                  "Dashboard",
-                  style: TextStyle(color: Colors.white, fontSize: 14),
-                ),
-              ],
-            ),
-          ),
-          Positioned(
-            bottom: 30,
-            left: 240,
-            child: Column(
-              children: [
-                FloatingActionButton(
-                  backgroundColor: currentIndex == 2 ? Color(0XFF6F97D8) : Colors.white,
-                  onPressed: () {
-                    setState(() {
-                      currentIndex = 2;
-                    });
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => ThirdPage()),
-                    );
-                  },
-                  child: Icon(
-                    Icons.cloud,
-                    color: currentIndex == 2 ? Colors.white : Colors.blue,
-                  ),
-                ),
-                SizedBox(height: 6),
-                Text(
-                  "Weather",
-                  style: TextStyle(color: Colors.white, fontSize: 14),
-                )
-              ],
-            ),
-          ),
-          Positioned(
-            bottom:30 ,
-            left: 337,
-            child: Column(
-              children: [
-                FloatingActionButton(
-                  backgroundColor: currentIndex == 3 ? Color(0XFF6F97D8) : Colors.white,
-                  onPressed: () {
-                    setState(() {
-                      currentIndex = 3;
-                    });
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => FourthPage()),
-                    );
-                  },
-                  child: Icon(
-                    Icons.settings,
-                    color: currentIndex == 3 ? Colors.white : Colors.blue,
-                  ),
-                ),
-                SizedBox(height: 6),
-                Text(
-                  "Setting",
-                  style: TextStyle(color: Colors.white, fontSize: 14),
-                )
-              ],
-            ),
-          ),
-          Positioned(
-            bottom: 30,
-            left: 45,
-            child: Column(
-              children: [
-                FloatingActionButton(
-                  backgroundColor: currentIndex == 0 ? Color(0XFF6F97D8) : Colors.white,
-                  onPressed: () {
-                    setState(() {
-                      currentIndex = 0;
-                    });
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => MyHomePage(title: 'Flutter Demo Home Page'),
-                      ),
-                    );
-                  },
-                  child: Icon(
-                    Icons.house,
-                    color: currentIndex == 0 ? Colors.white : Colors.blue,
-                  ),
-                ),
-                SizedBox(height: 6),
-                Text(
-                  "Home",
-                  style: TextStyle(color: Colors.white, fontSize: 14),
-                ),
-              ],
-            ),
-          ),
         ],
+      ),
+      bottomNavigationBar: Padding(
+        padding: EdgeInsets.only(bottom: 20),
+        child: Container(
+          height: 70,
+          margin: EdgeInsets.symmetric(horizontal: 40),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(40),
+            border: Border.all(color: Colors.white30, width: 1),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              GestureDetector(
+                onTap: () {
+                  setState(() => currentIndex = 0);
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => MyHomePage(title: 'Flutter Demo Home Page')),
+                  );
+                },
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.house, color: currentIndex == 0 ? Colors.white : Colors.white70),
+                    Text("Home", style: TextStyle(
+                        color: currentIndex == 0 ? Colors.white : Colors.white70, fontSize: 12
+                    )),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  setState(() => currentIndex = 1);
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => SecondPage()),
+                  );
+                },
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.dashboard, color: currentIndex == 1 ? Colors.white : Colors.white70),
+                    Text("Dashboard", style: TextStyle(
+                        color: currentIndex == 1 ? Colors.white : Colors.white70, fontSize: 12
+                    )),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  setState(() => currentIndex = 2);
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => ThirdPage()),
+                  );
+                },
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.cloud, color: currentIndex == 2 ? Colors.white : Colors.white70),
+                    Text("Weather", style: TextStyle(
+                        color: currentIndex == 2 ? Colors.white : Colors.white70, fontSize: 12
+                    )),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  setState(() => currentIndex = 3);
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => FourthPage()),
+                  );
+                },
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.settings, color: currentIndex == 3 ? Colors.white : Colors.white70),
+                    Text("Settings", style: TextStyle(
+                        color: currentIndex == 3 ? Colors.white : Colors.white70, fontSize: 12
+                    )),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
