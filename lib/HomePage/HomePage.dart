@@ -1,44 +1,21 @@
 import 'package:flutter/material.dart';
-import 'SecondPage.dart';
-import 'ThirdPage.dart';
-import 'FourthPage.dart';
+import '../DashBoard/DashBoard.dart';
+import '../Weather/Weather.dart';
+import '../Settings/Settings.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 import 'dart:ui';
-import 'metar_service.dart';
-import 'openai_service.dart';
+import '../metar_service.dart';
+import '../openai_service.dart';
 
-void main() {
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  // This widget is the root of your application.
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: Color(0xFF0A1A2F),
-        useMaterial3: true,
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+class HomePage extends StatefulWidget {
+  const HomePage({super.key, required this.title});
+  State<HomePage> createState() => _MyHomePageState();
 
   final String title;
 
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _MyHomePageState extends State<HomePage> {
   int currentIndex = 0;
   String metarData = "";
   TextEditingController airportController = TextEditingController();
@@ -258,7 +235,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                           if (firstNumber != null) {
                                             final score = double.parse(
                                                 firstNumber.group(0)!);
-                                            safetyScore = 
+                                            safetyScore =
                                                 (score / 10).clamp(
                                                     0.0, 1.0);
                                             safetyLabel =
@@ -365,7 +342,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   setState(() => currentIndex = 0);
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (context) => MyHomePage(title: 'Flutter Demo Home Page')),
+                    MaterialPageRoute(builder: (context) => HomePage(title: 'Flutter Demo Home Page')),
                   );
                 },
                 child: Column(

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'FirstPage.dart';
-import 'FourthPage.dart';
-import 'SecondPage.dart';
-import 'FourthPage.dart';
+import '../DashBoard/DashBoard.dart';
+import '../HomePage/HomePage.dart';
+import '../Settings/Settings.dart';
 class ThirdPage extends StatefulWidget {
   const ThirdPage({super.key});
 
@@ -64,7 +63,7 @@ class _ThirdPageState extends State<ThirdPage> {
                   setState(() => currentIndex = 0);
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (context) => MyHomePage(title: 'Flutter Demo Home Page')),
+                    MaterialPageRoute(builder: (context) => HomePage(title: 'Flutter Demo Home Page')),
                   );
                 },
                 child: Column(

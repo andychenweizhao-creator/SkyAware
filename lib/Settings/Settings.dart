@@ -1,45 +1,37 @@
 import 'package:flutter/material.dart';
-import 'FirstPage.dart';
-import 'ThirdPage.dart';
-import 'FourthPage.dart';
-
-class SecondPage extends StatefulWidget {
-  const SecondPage({super.key});
+import '../DashBoard/DashBoard.dart';
+import '../Weather/Weather.dart';
+import '../HomePage/HomePage.dart';
+class FourthPage extends StatefulWidget {
+  const FourthPage({super.key});
 
   @override
-  State<SecondPage> createState() => _SecondPageState();
+  State<FourthPage> createState() => _FourthPageState();
 }
 
-class _SecondPageState extends State<SecondPage> {
-  int currentIndex = 1;
+class _FourthPageState extends State<FourthPage> {
+  int currentIndex = 3;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFF0E1420),
-      body: Container(
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                      margin: EdgeInsets.only(left:10,top: 50),
-                      child:Text(
-                        "Live Monitor",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 45,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      )
-                  ),
-                ],
+      body: Stack(
+        children: [
+
+          Positioned(
+            top: 80,
+            left: 32,
+            child: Text(
+              "setting",
+              style: TextStyle(
+                fontSize: 40,
+                fontWeight: FontWeight.w700,
+                color: Colors.white
               ),
-            )
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: Padding(
         padding: EdgeInsets.only(bottom: 20),
@@ -59,7 +51,7 @@ class _SecondPageState extends State<SecondPage> {
                   setState(() => currentIndex = 0);
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (context) => MyHomePage(title: 'Flutter Demo Home Page')),
+                    MaterialPageRoute(builder: (context) => HomePage(title: 'Flutter Demo Home Page')),
                   );
                 },
                 child: Column(
@@ -133,7 +125,3 @@ class _SecondPageState extends State<SecondPage> {
     );
   }
 }
-
-
-
-

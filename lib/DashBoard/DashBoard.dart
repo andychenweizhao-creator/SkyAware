@@ -1,37 +1,44 @@
 import 'package:flutter/material.dart';
-import 'SecondPage.dart';
-import 'ThirdPage.dart';
-import 'FirstPage.dart';
-class FourthPage extends StatefulWidget {
-  const FourthPage({super.key});
+import '../HomePage/HomePage.dart';
+import '../Weather/Weather.dart';
+import '../Settings/Settings.dart';
+class SecondPage extends StatefulWidget {
+  const SecondPage({super.key});
 
   @override
-  State<FourthPage> createState() => _FourthPageState();
+  State<SecondPage> createState() => _SecondPageState();
 }
 
-class _FourthPageState extends State<FourthPage> {
-  int currentIndex = 3;
+class _SecondPageState extends State<SecondPage> {
+  int currentIndex = 1;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFF0E1420),
-      body: Stack(
-        children: [
-
-          Positioned(
-            top: 80,
-            left: 32,
-            child: Text(
-              "setting",
-              style: TextStyle(
-                fontSize: 40,
-                fontWeight: FontWeight.w700,
-                color: Colors.white
+      body: Container(
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                      margin: EdgeInsets.only(left:10,top: 50),
+                      child:Text(
+                        "Live Monitor",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 45,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      )
+                  ),
+                ],
               ),
-            ),
-          ),
-        ],
+            )
+          ],
+        ),
       ),
       bottomNavigationBar: Padding(
         padding: EdgeInsets.only(bottom: 20),
@@ -51,7 +58,7 @@ class _FourthPageState extends State<FourthPage> {
                   setState(() => currentIndex = 0);
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (context) => MyHomePage(title: 'Flutter Demo Home Page')),
+                    MaterialPageRoute(builder: (context) => HomePage(title: 'Flutter Demo Home Page')),
                   );
                 },
                 child: Column(
@@ -125,3 +132,7 @@ class _FourthPageState extends State<FourthPage> {
     );
   }
 }
+
+
+
+
