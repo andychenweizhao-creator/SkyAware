@@ -21,6 +21,12 @@ class NavigationbarState extends State<Navigationbar>{
     Settings(),
   ];
 
+  void onTabTapped(int index) {
+    setState(() {
+      currentIndex = index;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -42,14 +48,7 @@ class NavigationbarState extends State<Navigationbar>{
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               GestureDetector(
-                onTap: () {
-                  setState(() => currentIndex = 0);
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) =>
-                        HomePage(title: 'Flutter Demo Home Page')),
-                  );
-                },
+                onTap: () => onTabTapped(0),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -67,13 +66,7 @@ class NavigationbarState extends State<Navigationbar>{
                 ),
               ),
               GestureDetector(
-                onTap: () {
-                  setState(() => currentIndex = 1);
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => DashBoard()),
-                  );
-                },
+                onTap: () => onTabTapped(1),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -91,13 +84,7 @@ class NavigationbarState extends State<Navigationbar>{
                 ),
               ),
               GestureDetector(
-                onTap: () {
-                  setState(() => currentIndex = 2);
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => Weather()),
-                  );
-                },
+                onTap: () => onTabTapped(2),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -115,13 +102,7 @@ class NavigationbarState extends State<Navigationbar>{
                 ),
               ),
               GestureDetector(
-                onTap: () {
-                  setState(() => currentIndex = 3);
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => Settings()),
-                  );
-                },
+                onTap: () => onTabTapped(3),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [

@@ -4,6 +4,8 @@ import 'package:percent_indicator/percent_indicator.dart';
 import '../../metar_service.dart';
 import '../../openai_service.dart';
 
+
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key, required this.title});
   State<HomePage> createState() => _MyHomePageState();
@@ -232,10 +234,10 @@ class _MyHomePageState extends State<HomePage> {
                                           if (firstNumber != null) {
                                             final score = double.parse(
                                                 firstNumber.group(0)!);
-                                            safetyScore =
+                                            safetyScore = 
                                                 (score / 10).clamp(
                                                     0.0, 1.0);
-                                            safetyLabel =
+                                            safetyLabel = 
                                             score >= 7 ? "SAFE" : score >= 4
                                                 ? "MODERATE"
                                                 : "DANGER";
