@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
-import '../../Service/location_service.dart';
-import '../../Service/weather_service.dart';
+import '../../location_service.dart';
+import '../../Service/apple_weather_service.dart';
 
 class Weather extends StatefulWidget {
   @override
@@ -11,10 +11,9 @@ class Weather extends StatefulWidget {
 
 class _WeatherState extends State<Weather> {
   final LocationService _locationService = LocationService();
-  final WeatherService _weatherService = WeatherService();
+  final AppleWeatherService _appleWeatherService = AppleWeatherService();
 
-  WeatherDetails? _weatherDetails;
-  Map<String, dynamic>? _windConditions;
+  AppleWeather? _appleWeather;
   bool _isLoading = true;
   String? _error;
 
@@ -46,12 +45,10 @@ class _WeatherState extends State<Weather> {
 
   Future<void> _fetchWeatherData(double latitude, double longitude) async {
     try {
-      final details = await _weatherService.getWeatherDetails(latitude, longitude);
-      final wind = await _weatherService.getWindConditions(latitude, longitude);
+      final weather = await _appleWeatherService.getWeather(latitude, longitude);
       if (mounted) {
         setState(() {
-          _weatherDetails = details;
-          _windConditions = wind;
+          _appleWeather = weather;
           _isLoading = false;
         });
       }
@@ -90,7 +87,7 @@ class _WeatherState extends State<Weather> {
     if (_error != null) {
       return Center(child: Text('Error: $_error'));
     }
-    if (_weatherDetails == null || _windConditions == null) {
+    if (_appleWeather == null) {
       return Center(child: Text('No weather data available.'));
     }
 
@@ -103,9 +100,9 @@ class _WeatherState extends State<Weather> {
           SizedBox(height: 10),
           _buildInfoCard(
             children: [
-              _buildInfoRow('Visibility', '${_weatherDetails!.visibility.toStringAsFixed(1)} mi'),
-              _buildInfoRow('Precipitation', _weatherDetails!.precipitation),
-              _buildInfoRow('Cloud Ceiling', _weatherDetails!.cloudCeiling),
+              _buildInfoRow('Visibility', '${_appleWeather!.visibility.toStringAsFixed(1)} mi'),
+              _buildInfoRow('Precipitation', _appleWeather!.precipitation),
+              _buildInfoRow('Cloud Ceiling', _appleWeather!.cloudCeiling),
             ],
           ),
           SizedBox(height: 30),
@@ -113,9 +110,9 @@ class _WeatherState extends State<Weather> {
           SizedBox(height: 10),
           _buildInfoCard(
             children: [
-              _buildInfoRow('Speed', '${_windConditions!['speed'].toStringAsFixed(0)} mph'),
-              _buildInfoRow('Gust', '${_windConditions!['gust'].toStringAsFixed(0)} mph'),
-              _buildInfoRow('Direction', _windConditions!['direction']),
+              _buildInfoRow('Speed', '${_appleWeather!.windSpeed.toString()} mph'),
+              _buildInfoRow('Gust', '${_appleWeather!.windGust.toString()} mph'),
+              _buildInfoRow('Direction', _appleWeather!.windDirection),
             ],
           ),
         ],
