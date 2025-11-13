@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:geolocator/geolocator.dart';
-import '../../location_service.dart';
-import 'components/wind_conditions_box.dart';
-import 'components/weather_details_box.dart';
+import '../../Service/location_service.dart';
+import '../../Service/wind_conditions_box.dart';
+import '../../Service/weather_details_box.dart';
 
 class DashBoard extends StatefulWidget {
   @override

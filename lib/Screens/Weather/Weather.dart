@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
-import '../../location_service.dart';
-import '../../weather_service.dart';
+import '../../Service/location_service.dart';
+import '../../Service/weather_service.dart';
 
 class Weather extends StatefulWidget {
   @override

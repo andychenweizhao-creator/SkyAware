@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:percent_indicator/percent_indicator.dart';
-import '../../metar_service.dart';
-import '../../openai_service.dart';
+import '../../Service/metar_service.dart';
+import '../../Service/openai_service.dart';
 
 
 
