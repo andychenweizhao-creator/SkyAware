@@ -17,35 +17,14 @@ import 'package:xml/xml.dart' as xml;
 import 'dart:ui' as ui;
 import 'dart:math' as Math;
 
+
 import '../../../Service/weather_service.dart';
 import 'Risk_Assesments.dart' hide LegWx;
 
 import 'package:http/http.dart' as http;
-// WeatherIconResolver for weather icons/colors
-class WeatherIconResolver {
-  static IconData getIcon(int weatherCode) {
-    if (weatherCode == 0) return Icons.wb_sunny;
-    if ([1,2,3].contains(weatherCode)) return Icons.cloud;
-    if ([51,53,55].contains(weatherCode)) return Icons.water_drop;
-    if ([61,63,65].contains(weatherCode)) return Icons.umbrella;
-    if ([66,67].contains(weatherCode)) return Icons.ac_unit;
-    if ([71,73,75].contains(weatherCode)) return Icons.cloudy_snowing;
-    if ([95].contains(weatherCode)) return Icons.thunderstorm;
-    if ([96,99].contains(weatherCode)) return Icons.flash_on;
-    return Icons.help_center;
-  }
+import "../../../components/WeatherIconResolver.dart";
+import "../../../models/metar_airport.dart";
 
-  static Color getColor(int weatherCode) {
-    if (weatherCode == 0) return Colors.amberAccent;
-    if ([1,2,3].contains(weatherCode)) return Colors.white70;
-    if ([51,53,55].contains(weatherCode)) return Colors.blueAccent;
-    if ([61,63,65].contains(weatherCode)) return Colors.blue;
-    if ([66,67].contains(weatherCode)) return Colors.cyanAccent;
-    if ([71,73,75].contains(weatherCode)) return Colors.lightBlueAccent;
-    if ([95,96,99].contains(weatherCode)) return Colors.deepPurpleAccent;
-    return Colors.grey;
-  }
-}
 
 
 
@@ -56,198 +35,11 @@ class WeatherIconResolver {
 
 // --- METAR & Nearest Airport helpers ---
 
-class MetarData {
-  final double? visibilitySm;
-  final double? cloudBaseFt;
 
-  const MetarData({this.visibilitySm, this.cloudBaseFt});
-}
 
-class _Airport {
-  final String icao;
-  final double lat;
-  final double lon;
-  const _Airport(this.icao, this.lat, this.lon);
-}
 
-class NearestAirportDb {
-  static final List<_Airport> _airports = [
-    // 示例机场（你可以根据需要扩展为完整美国机场/私用机场列表）
-    _Airport('KLAX', 33.9425, -118.4081),
-    _Airport('KBUR', 34.2007, -118.3587),
-    _Airport('KVNY', 34.2100, -118.4900),
-    _Airport('KSNA', 33.6757, -117.8675),
-    _Airport('KONT', 34.0560, -117.6012),
-    _Airport('KSAN', 32.7338, -117.1933),
-    _Airport('KSMO', 34.0158, -118.4513),
-    _Airport('KFUL', 33.8720, -117.9800),
-    _Airport('KPOC', 34.0917, -117.7820),
-    _Airport('KRAL', 33.9519, -117.4451),
-  ];
 
-  static const double _maxKm = 50.0;
-  static final Distance _dist = const Distance();
 
-  static String? findNearestStation(LatLng p) {
-    double best = double.infinity;
-    String? bestIcao;
-
-    for (final a in _airports) {
-      final d = _dist.as(
-        LengthUnit.Kilometer,
-        p,
-        LatLng(a.lat, a.lon),
-      );
-      if (d < best) {
-        best = d;
-        bestIcao = a.icao;
-      }
-    }
-
-    if (best == double.infinity || best > _maxKm) return null;
-    return bestIcao;
-  }
-}
-
-class MetarService {
-  static const String _host = 'aviationweather.gov';
-  static const String _basePath = '/api/data';
-  static final Map<String, MetarData> _cache = {};
-
-  static Future<MetarData?> fetchNearestMetar(LatLng p) async {
-    // ---- GLOBAL METAR MODE ----
-    // Query aviationweather.gov for nearest METAR station globally
-    final stationUri = Uri.https(
-      _host,
-      '$_basePath/stations',
-      {
-        'format': 'json',
-        'lat': p.latitude.toString(),
-        'lon': p.longitude.toString(),
-        'radius': '150', // km radius for nearest search
-      },
-    );
-
-    final stationRes = await http.get(stationUri);
-    if (stationRes.statusCode != 200) return null;
-
-    final stationJson = jsonDecode(stationRes.body);
-    if (stationJson is! List || stationJson.isEmpty) return null;
-
-    // Pick nearest station by haversine
-    double bestDist = double.infinity;
-    String? bestIcao;
-    for (final s in stationJson) {
-      if (s is! Map<String, dynamic>) continue;
-      final icao = s['icaoId'] ?? s['stationId'];
-      final lat = s['latitude'];
-      final lon = s['longitude'];
-      if (icao == null || lat == null || lon == null) continue;
-
-      final d = Distance().as(
-        LengthUnit.Kilometer,
-        p,
-        LatLng(lat.toDouble(), lon.toDouble()),
-      );
-
-      if (d < bestDist) {
-        bestDist = d;
-        bestIcao = icao.toString();
-      }
-    }
-
-    if (bestIcao == null) return null;
-
-    // Use caching
-    if (_cache.containsKey(bestIcao)) {
-      return _cache[bestIcao];
-    }
-    final station = bestIcao;
-
-    // ---- GLOBAL METAR PARSER ----
-    final metarUri = Uri.https(
-      _host,
-      '$_basePath/metar',
-      {'format': 'json', 'ids': station},
-    );
-
-    final metarRes = await http.get(metarUri);
-    if (metarRes.statusCode != 200) return null;
-
-    final metarJson = jsonDecode(metarRes.body);
-    if (metarJson is! List || metarJson.isEmpty) return null;
-
-    final obs = metarJson.first;
-    if (obs is! Map<String, dynamic>) return null;
-
-    // Visibility (SM)
-    double? visibilitySm;
-    final visField = obs['visibility'];
-    if (visField is num) {
-      visibilitySm = visField.toDouble();
-    } else if (visField is String) {
-      visibilitySm = double.tryParse(visField);
-    }
-
-    // Cloud base from clouds[]
-    double? cloudBaseFt;
-    if (obs['clouds'] is List) {
-      for (final c in obs['clouds']) {
-        if (c is Map && c['base'] != null) {
-          final base = c['base'];
-          if (base is num) {
-            cloudBaseFt = base * 100.0;
-            break;
-          } else {
-            final parsed = double.tryParse(base.toString());
-            if (parsed != null) {
-              cloudBaseFt = parsed * 100.0;
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    // Raw METAR fallback ceiling
-    final raw = obs['rawOb'] ?? obs['raw_text'] ?? obs['raw'] ?? '';
-    if (raw is String) {
-      final parsed = _parseCeilingFromMetar(raw);
-      cloudBaseFt ??= parsed;
-    }
-
-    final data = MetarData(
-      visibilitySm: visibilitySm,
-      cloudBaseFt: cloudBaseFt,
-    );
-    _cache[station] = data;
-    return data;
-  }
-
-  // Parse ceiling (cloud base) from raw METAR string.
-  // Ceiling = lowest VV / OVC / BKN layer, height = XXX * 100 ft.
-  static double? _parseCeilingFromMetar(String raw) {
-    // Example token: BKN070, OVC008, VV002, etc.
-    final reg = RegExp(r'(VV|OVC|BKN)(\d{3})');
-    final matches = reg.allMatches(raw);
-    if (matches.isEmpty) return null;
-
-    double? best;
-    for (final m in matches) {
-      final code = m.group(1);
-      final hStr = m.group(2);
-      if (hStr == null) continue;
-      final h = int.tryParse(hStr);
-      if (h == null) continue;
-
-      final ft = h * 100.0;
-      if (best == null || ft < best) {
-        best = ft;
-      }
-    }
-    return best;
-  }
-}
 
 class WeatherEngine {
   static const double _spacingKm = 5.0;
@@ -745,174 +537,7 @@ class WeatherEngine {
 //  SRTM NASA 30 m DEM (auto +2500 ft)
 // =========================
 
-class TerrainSample {
-  final LatLng position;
-  final double elevationFt;
 
-  TerrainSample(this.position, this.elevationFt);
-}
-
-class RouteTerrainSummary {
-  final List<TerrainSample> samples;
-  final double maxElevationFt;
-  final double recommendedAltitudeFt;
-
-  RouteTerrainSummary({
-    required this.samples,
-    required this.maxElevationFt,
-    required this.recommendedAltitudeFt,
-  });
-}
-
-class TerrainEngine {
-  // Use same 2 km spacing as WeatherEngine
-  static const double _spacingKm = 2.0;
-
-  // Highest safety tier C: keep at least 2500 ft above terrain
-  static const double _safetyMarginFt = 2500.0;
-
-  /// Fetch SRTM 30m terrain profile along the route and
-  /// compute an automatic recommended cruise altitude.
-  static Future<RouteTerrainSummary> fetchRouteTerrain(
-      List<LatLng> path,
-      ) async {
-    if (path.length < 2) {
-      return RouteTerrainSummary(
-        samples: const [],
-        maxElevationFt: 0,
-        recommendedAltitudeFt: _safetyMarginFt,
-      );
-    }
-
-    // Reuse WeatherEngine's sampling, but fetch elevations in batches
-    final samplesLatLng =
-    WeatherEngine._sampleRoute(path, spacingKm: _spacingKm);
-
-    final List<TerrainSample> out = [];
-    double maxElevFt = 0;
-
-    // Batch size for OpenTopoData multi-location requests
-    const int batchSize = 50;
-    for (int i = 0; i < samplesLatLng.length; i += batchSize) {
-      final int end = (i + batchSize > samplesLatLng.length)
-          ? samplesLatLng.length
-          : i + batchSize;
-      final batch = samplesLatLng.sublist(i, end);
-      final elevs = await _fetchElevationsFtBatch(batch);
-
-      for (int j = 0; j < batch.length; j++) {
-        final elevFt = (j < elevs.length) ? elevs[j] : null;
-        if (elevFt == null) continue;
-
-        final p = batch[j];
-        out.add(TerrainSample(p, elevFt));
-        if (elevFt > maxElevFt) {
-          maxElevFt = elevFt;
-        }
-      }
-    }
-
-    final recommendedAltFt = maxElevFt + _safetyMarginFt;
-
-    return RouteTerrainSummary(
-      samples: out,
-      maxElevationFt: maxElevFt,
-      recommendedAltitudeFt: recommendedAltFt,
-    );
-  }
-
-  /// Call SRTM NASA 30m DEM via OpenTopoData API.
-  /// Dataset: `srtm30m`
-  static Future<double?> _fetchElevationFt(LatLng p) async {
-    final uri = Uri.https(
-      'api.opentopodata.org',
-      '/v1/srtm30m',
-      {
-        'locations': '${p.latitude},${p.longitude}',
-      },
-    );
-
-    try {
-      final res = await http.get(uri);
-      if (res.statusCode != 200) return null;
-
-      final json = jsonDecode(res.body);
-      if (json is! Map<String, dynamic>) return null;
-
-      final results = json['results'];
-      if (results is! List || results.isEmpty) return null;
-
-      final first = results.first;
-      if (first is! Map<String, dynamic>) return null;
-
-      final elevMeters = first['elevation'];
-      if (elevMeters is! num) return null;
-
-      // meters -> feet
-      return elevMeters.toDouble() * 3.28084;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static Future<List<double?>> _fetchElevationsFtBatch(
-      List<LatLng> points,
-      ) async {
-    if (points.isEmpty) return [];
-
-    final locations = points
-        .map((p) => '${p.latitude},${p.longitude}')
-        .join('|');
-
-    final uri = Uri.https(
-      'api.opentopodata.org',
-      '/v1/srtm30m',
-      {
-        'locations': locations,
-      },
-    );
-
-    try {
-      final res = await http.get(uri);
-      if (res.statusCode != 200) {
-        // On error, return nulls for all points so caller can skip them.
-        return List<double?>.filled(points.length, null);
-      }
-
-      final json = jsonDecode(res.body);
-      if (json is! Map<String, dynamic>) {
-        return List<double?>.filled(points.length, null);
-      }
-
-      final results = json['results'];
-      if (results is! List || results.isEmpty) {
-        return List<double?>.filled(points.length, null);
-      }
-
-      final List<double?> out = [];
-      for (final r in results) {
-        if (r is! Map<String, dynamic>) {
-          out.add(null);
-          continue;
-        }
-        final elevMeters = r['elevation'];
-        if (elevMeters is! num) {
-          out.add(null);
-          continue;
-        }
-        out.add(elevMeters.toDouble() * 3.28084);
-      }
-
-      // If API returned fewer results than requested, pad with nulls
-      while (out.length < points.length) {
-        out.add(null);
-      }
-      return out;
-    } catch (_) {
-      return List<double?>.filled(points.length, null);
-    }
-  }
-}
 
 extension FirstOrNullExtension<E> on Iterable<E> {
   E? get firstOrNull => isEmpty ? null : first;
@@ -1712,57 +1337,60 @@ class _FlightPlanBoxState extends State<FlightPlanBox> {
             ),
 
           // --- FLIGHT MODE BUTTONS (Position 3) ---
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // AUTO
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _flightMode == FlightMode.auto
-                        ? Colors.blueAccent
-                        : const Color(0xFF1E2A35),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // AUTO
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _flightMode == FlightMode.auto
+                          ? Colors.blueAccent
+                          : const Color(0xFF1E2A35),
+                    ),
+                    onPressed: () {
+                      setState(() => _flightMode = FlightMode.auto);
+                    },
+                    child: const Text("AUTO"),
                   ),
-                  onPressed: () {
-                    setState(() => _flightMode = FlightMode.auto);
-                  },
-                  child: const Text("AUTO"),
                 ),
-              ),
-
-              // PRE-FLIGHT
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _flightMode == FlightMode.preflight
-                        ? Colors.blueAccent
-                        : const Color(0xFF1E2A35),
+            
+                // PRE-FLIGHT
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _flightMode == FlightMode.preflight
+                          ? Colors.blueAccent
+                          : const Color(0xFF1E2A35),
+                    ),
+                    onPressed: () {
+                      setState(() => _flightMode = FlightMode.preflight);
+                    },
+                    child: const Text("PRE-FLIGHT"),
                   ),
-                  onPressed: () {
-                    setState(() => _flightMode = FlightMode.preflight);
-                  },
-                  child: const Text("PRE-FLIGHT"),
                 ),
-              ),
-
-              // IN-FLIGHT
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _flightMode == FlightMode.inflight
-                        ? Colors.blueAccent
-                        : const Color(0xFF1E2A35),
+            
+                // IN-FLIGHT
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _flightMode == FlightMode.inflight
+                          ? Colors.blueAccent
+                          : const Color(0xFF1E2A35),
+                    ),
+                    onPressed: () {
+                      setState(() => _flightMode = FlightMode.inflight);
+                    },
+                    child: const Text("IN-FLIGHT"),
                   ),
-                  onPressed: () {
-                    setState(() => _flightMode = FlightMode.inflight);
-                  },
-                  child: const Text("IN-FLIGHT"),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 12),
 
