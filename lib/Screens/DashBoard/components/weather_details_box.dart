@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../../location_service.dart';
-import '../../../Service/apple_weather_service.dart';
+import '../../../weather_service.dart';
 import 'package:geolocator/geolocator.dart';
 
 class WeatherDetailsBox extends StatefulWidget {
@@ -12,10 +12,11 @@ class WeatherDetailsBox extends StatefulWidget {
 
 class _WeatherDetailsBoxState extends State<WeatherDetailsBox> {
   final LocationService _locationService = LocationService();
-  final AppleWeatherService _appleWeatherService = AppleWeatherService();
+  final WeatherService _weatherService = WeatherService();
   StreamSubscription<Position>? _positionSubscription;
-  AppleWeather? _appleWeather;
+  Weather? _weather;
   Position? _lastPosition;
+  String? _error;
 
   @override
   void initState() {
@@ -31,7 +32,7 @@ class _WeatherDetailsBoxState extends State<WeatherDetailsBox> {
               ) >
               1000) {
         _lastPosition = position;
-        _fetchAppleWeather(position.latitude, position.longitude);
+        _fetchWeather(position.latitude, position.longitude);
       }
     });
   }
@@ -42,14 +43,21 @@ class _WeatherDetailsBoxState extends State<WeatherDetailsBox> {
     super.dispose();
   }
 
-  void _fetchAppleWeather(double latitude, double longitude) async {
+  void _fetchWeather(double latitude, double longitude) async {
     try {
-      final weather = await _appleWeatherService.getWeather(latitude, longitude);
+      final weather = await _weatherService.getWeather(latitude, longitude);
       if (mounted) {
-        setState(() => _appleWeather = weather);
+        setState(() {
+          _weather = weather;
+          _error = null;
+        });
       }
     } catch (e) {
-      print('Failed to fetch Apple Weather: $e');
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -76,19 +84,43 @@ class _WeatherDetailsBoxState extends State<WeatherDetailsBox> {
               BoxShadow(color: Colors.black.withOpacity(0.45), blurRadius: 30, offset: Offset(6, 10)),
             ],
           ),
-          child: _appleWeather == null
-              ? Center(child: CircularProgressIndicator(color: Colors.white))
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildHeader(),
-                    SizedBox(height: 10),
-                    _buildDetails(),
-                    Spacer(),
-                  ],
-                ),
+          child: _buildContent(),
         ),
       ),
+    );
+  }
+
+  Widget _buildContent() {
+    if (_error != null) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('Error fetching weather', style: TextStyle(color: Colors.white, fontSize: 16)),
+          SizedBox(height: 10),
+          ElevatedButton(
+            onPressed: () {
+              if (_lastPosition != null) {
+                _fetchWeather(_lastPosition!.latitude, _lastPosition!.longitude);
+              }
+            },
+            child: Text("Retry"),
+          ),
+        ],
+      );
+    }
+
+    if (_weather == null) {
+      return Center(child: CircularProgressIndicator(color: Colors.white));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader(),
+        SizedBox(height: 10),
+        _buildDetails(),
+        Spacer(),
+      ],
     );
   }
 
@@ -110,9 +142,9 @@ class _WeatherDetailsBoxState extends State<WeatherDetailsBox> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
-        _buildDetailItem("Visibility", "${_appleWeather!.visibility.toStringAsFixed(1)} mi"),
-        _buildDetailItem("Precipitation", _appleWeather!.precipitation),
-        _buildDetailItem("Cloud Ceiling", _appleWeather!.cloudCeiling),
+        _buildDetailItem("Visibility", "${_weather!.visibility.toStringAsFixed(1)} mi"),
+        _buildDetailItem("Precipitation", "${_weather!.precipitation.toStringAsFixed(2)} in"),
+        _buildDetailItem("Cloud Cover", _weather!.cloudCover),
       ],
     );
   }

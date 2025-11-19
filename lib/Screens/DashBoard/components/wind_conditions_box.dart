@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../../location_service.dart';
-import '../../../Service/apple_weather_service.dart';
+import '../../../weather_service.dart';
+import '../../../Service/openai_service.dart';
 import 'package:geolocator/geolocator.dart';
 
 class WindConditionsBox extends StatefulWidget {
@@ -12,17 +13,20 @@ class WindConditionsBox extends StatefulWidget {
 
 class _WindConditionsBoxState extends State<WindConditionsBox> {
   final LocationService _locationService = LocationService();
-  final AppleWeatherService _appleWeatherService = AppleWeatherService();
+  final WeatherService _weatherService = WeatherService();
+  final OpenAIService _openAIService = OpenAIService();
+
   StreamSubscription<Position>? _positionSubscription;
-  AppleWeather? _appleWeather;
+  Weather? _weather;
+  String _analysisScore = "";
   Position? _lastPosition;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
     _positionSubscription = _locationService.getPositionStream().listen((Position position) {
       if (!mounted) return;
-      // Fetch new data only if the location has changed significantly (over 1km)
       if (_lastPosition == null ||
           Geolocator.distanceBetween(
                 _lastPosition!.latitude,
@@ -32,7 +36,7 @@ class _WindConditionsBoxState extends State<WindConditionsBox> {
               ) >
               1000) {
         _lastPosition = position;
-        _fetchAppleWeather(position.latitude, position.longitude);
+        _fetchData(position.latitude, position.longitude);
       }
     });
   }
@@ -43,15 +47,24 @@ class _WindConditionsBoxState extends State<WindConditionsBox> {
     super.dispose();
   }
 
-  void _fetchAppleWeather(double latitude, double longitude) async {
+  Future<void> _fetchData(double latitude, double longitude) async {
     try {
-      final weather = await _appleWeatherService.getWeather(latitude, longitude);
+      final weather = await _weatherService.getWeather(latitude, longitude);
+      final analysis = await _openAIService.analyzeWeather(weather);
       if (mounted) {
-        setState(() => _appleWeather = weather);
+        setState(() {
+          _weather = weather;
+          _analysisScore = analysis;
+          _error = null;
+        });
       }
     } catch (e) {
-      print('Failed to fetch Apple Weather: $e');
-      // Optionally handle the error in the UI
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+        });
+      }
+      print('Failed to fetch data: $e');
     }
   }
 
@@ -62,36 +75,59 @@ class _WindConditionsBoxState extends State<WindConditionsBox> {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: Container(
-          constraints: BoxConstraints(maxWidth: 1000),
-          height: 200,
-          padding: EdgeInsets.fromLTRB(25, 15, 25, 15),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
-            gradient: LinearGradient(
-              colors: [Colors.white.withOpacity(0.18), Colors.white.withOpacity(0.05)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+            constraints: BoxConstraints(maxWidth: 1000),
+            height: 200,
+            padding: EdgeInsets.fromLTRB(25, 15, 25, 15),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              gradient: LinearGradient(
+                colors: [Colors.white.withOpacity(0.18), Colors.white.withOpacity(0.05)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              border: Border.all(color: Colors.white.withOpacity(0.35), width: 1.4),
+              boxShadow: [
+                BoxShadow(color: Colors.white.withOpacity(0.25), blurRadius: 25, spreadRadius: -5, offset: Offset(-4, -4)),
+                BoxShadow(color: Colors.black.withOpacity(0.45), blurRadius: 30, offset: Offset(6, 10)),
+              ],
             ),
-            border: Border.all(color: Colors.white.withOpacity(0.35), width: 1.4),
-            boxShadow: [
-              BoxShadow(color: Colors.white.withOpacity(0.25), blurRadius: 25, spreadRadius: -5, offset: Offset(-4, -4)),
-              BoxShadow(color: Colors.black.withOpacity(0.45), blurRadius: 30, offset: Offset(6, 10)),
-            ],
-          ),
-          child: _appleWeather == null
-              ? Center(child: CircularProgressIndicator(color: Colors.white))
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildHeader(),
-                    SizedBox(height: 10),
-                    _buildDetails(),
-                    Spacer(),
-                    _buildProgressBar(),
-                  ],
-                ),
-        ),
+            child: _buildContent()),
       ),
+    );
+  }
+
+  Widget _buildContent() {
+    if (_error != null) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('Error fetching data', style: TextStyle(color: Colors.white, fontSize: 16)),
+          SizedBox(height: 10),
+          ElevatedButton(
+            onPressed: () {
+              if (_lastPosition != null) {
+                _fetchData(_lastPosition!.latitude, _lastPosition!.longitude);
+              }
+            },
+            child: Text("Retry"),
+          ),
+        ],
+      );
+    }
+
+    if (_weather == null) {
+      return Center(child: CircularProgressIndicator(color: Colors.white));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader(),
+        SizedBox(height: 10),
+        _buildDetails(),
+        Spacer(),
+        _buildProgressBar(),
+      ],
     );
   }
 
@@ -108,7 +144,7 @@ class _WindConditionsBoxState extends State<WindConditionsBox> {
         Container(
           padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(color: Color(0xFF2C3A4F).withOpacity(0.8), borderRadius: BorderRadius.circular(16)),
-          child: Text("Score: ${_calculateScore()}/10", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+          child: Text("Score: $_analysisScore/10", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
         ),
       ],
     );
@@ -118,9 +154,9 @@ class _WindConditionsBoxState extends State<WindConditionsBox> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
-        _buildDetailItem("Speed", _appleWeather!.windSpeed.toString(), "mph"),
-        _buildDetailItem("Direction", _appleWeather!.windDirection, null),
-        _buildDetailItem("Gust", _appleWeather!.windGust.toString(), "mph"),
+        _buildDetailItem("Speed", _weather!.windSpeed.toStringAsFixed(0), "mph"),
+        _buildDetailItem("Direction", _weather!.windDirection, null),
+        _buildDetailItem("Gust", _weather!.windGust.toStringAsFixed(0), "mph"),
       ],
     );
   }
@@ -138,27 +174,18 @@ class _WindConditionsBoxState extends State<WindConditionsBox> {
   }
 
   Widget _buildProgressBar() {
+    final score = int.tryParse(_analysisScore) ?? 0;
     return Container(
       height: 8,
       child: ClipRRect(
         borderRadius: BorderRadius.all(Radius.circular(4)),
         child: Row(
           children: [
-            Expanded(flex: _calculateScore(), child: Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF80E894), Color(0xFFF5E669)])))),
-            Expanded(flex: 10 - _calculateScore(), child: Container(color: Color(0xFF3D4C63))),
+            Expanded(flex: score, child: Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF80E894), Color(0xFFF5E669)])))),
+            Expanded(flex: 10 - score, child: Container(color: Color(0xFF3D4C63))),
           ],
         ),
       ),
     );
-  }
-
-  int _calculateScore() {
-    if (_appleWeather == null) return 0;
-    final speed = _appleWeather!.windSpeed;
-    if (speed < 5) return 9;
-    if (speed < 10) return 7;
-    if (speed < 15) return 5;
-    if (speed < 20) return 3;
-    return 1;
   }
 }

@@ -28,6 +28,10 @@
     <string>This app needs access to location when open.</string>
     <key>NSLocationAlwaysUsageDescription</key>
     <string>This app needs access to location when in the background.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>This app needs continuous location access to track altitude and speed.</string>
+    <key>NSLocationUsageDescription</key>
+    <string>This app needs access to your location to provide flight tracking and map features.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -49,5 +53,7 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+    <key>NSMotionUsageDescription</key>
+    <string>This app needs access to motion data to calculate speed and movement.</string>
 </dict>
 </plist>
