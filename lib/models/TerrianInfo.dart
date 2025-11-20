@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import '../Service/WeatherEngine.dart';
 import 'package:latlong2/latlong.dart';
-import '../Service/weather_service.dart';
 import 'package:http/http.dart' as http;
 
 class TerrainSample {

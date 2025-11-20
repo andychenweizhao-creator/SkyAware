@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-import 'WeatherEngine.dart';
-import 'package:latlong2/latlong.dart';
-import 'weather_service.dart';
 import 'package:http/http.dart' as http;
+import 'package:latlong2/latlong.dart';
+import 'WeatherEngine.dart';
+
+
 
 class TerrainSample {
   final LatLng position;
@@ -25,17 +26,10 @@ class RouteTerrainSummary {
 }
 
 class TerrainEngine {
-  // Use same 2 km spacing as WeatherEngine
   static const double _spacingKm = 2.0;
-
-  // Highest safety tier C: keep at least 2500 ft above terrain
   static const double _safetyMarginFt = 2500.0;
 
-  /// Fetch SRTM 30m terrain profile along the route and
-  /// compute an automatic recommended cruise altitude.
-  static Future<RouteTerrainSummary> fetchRouteTerrain(
-      List<LatLng> path,
-      ) async {
+  static Future<RouteTerrainSummary> fetchRouteTerrain(List<LatLng> path) async {
     if (path.length < 2) {
       return RouteTerrainSummary(
         samples: const [],
@@ -44,14 +38,10 @@ class TerrainEngine {
       );
     }
 
-    // Reuse WeatherEngine's sampling, but fetch elevations in batches
-    final samplesLatLng =
-        WeatherEngine.sampleRoute(path, spacingKm: _spacingKm);
-
+    final samplesLatLng = WeatherEngine.sampleRoute(path, spacingKm: _spacingKm);
     final List<TerrainSample> out = [];
     double maxElevFt = 0;
 
-    // Batch size for OpenTopoData multi-location requests
     const int batchSize = 50;
     for (int i = 0; i < samplesLatLng.length; i += batchSize) {
       final int end = (i + batchSize > samplesLatLng.length)
@@ -81,27 +71,15 @@ class TerrainEngine {
     );
   }
 
-  static Future<List<double?>> _fetchElevationsFtBatch(
-      List<LatLng> points,
-      ) async {
+  static Future<List<double?>> _fetchElevationsFtBatch(List<LatLng> points) async {
     if (points.isEmpty) return [];
 
-    final locations = points
-        .map((p) => '${p.latitude},${p.longitude}')
-        .join('|');
-
-    final uri = Uri.https(
-      'api.opentopodata.org',
-      '/v1/srtm30m',
-      {
-        'locations': locations,
-      },
-    );
+    final locations = points.map((p) => '${p.latitude},${p.longitude}').join('|');
+    final uri = Uri.https('api.opentopodata.org', '/v1/srtm30m', {'locations': locations});
 
     try {
       final res = await http.get(uri);
       if (res.statusCode != 200) {
-        // On error, return nulls for all points so caller can skip them.
         return List<double?>.filled(points.length, null);
       }
 
@@ -129,7 +107,6 @@ class TerrainEngine {
         out.add(elevMeters.toDouble() * 3.28084);
       }
 
-      // If API returned fewer results than requested, pad with nulls
       while (out.length < points.length) {
         out.add(null);
       }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:skyaware/Service/weather_service.dart';
 import 'dart:ui' as ui;
 import '../../models/metar_airport.dart';
 import '../../Service/terrain_engine.dart';

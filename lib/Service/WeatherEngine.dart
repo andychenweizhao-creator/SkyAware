@@ -5,7 +5,34 @@ import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
-import 'weather_service.dart';
+
+
+
+class WeatherPoint {
+  final LatLng position;
+  final LegWx weather;
+
+  const WeatherPoint(this.position, this.weather);
+}
+class LegWx {
+  final int weatherCode;
+  final double? cloudBaseFt;
+  final double? visibilitySm;
+  final int? windDirDeg;
+  final double? windSpeedKt;
+  final double? precipPct;
+  final bool convective;
+
+  const LegWx({
+  required this.weatherCode,
+  required this.cloudBaseFt,
+  required this.visibilitySm,
+  required this.windDirDeg,
+  required this.windSpeedKt,
+  required this.precipPct,
+  required this.convective,
+  });
+}
 
 class WeatherEngine {
   static const double _spacingKm = 5.0;

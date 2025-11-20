@@ -4,7 +4,6 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'terrain_engine.dart';
-import 'weather_service.dart';
 import 'WeatherEngine.dart';
 import '../components/WeatherIconResolver.dart';
 
