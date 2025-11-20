@@ -4,7 +4,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:skyaware/Service/weather_service.dart';
 import 'dart:ui' as ui;
 import '../../models/metar_airport.dart';
-import '../../Service/TerrianEngines.dart';
+import '../../Service/terrain_engine.dart';
+import '../../Service/WeatherEngine.dart';
 
 class MapView extends StatefulWidget {
   const MapView({super.key});
@@ -23,7 +24,6 @@ class _MapViewState extends State<MapView> {
     'satellite':
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   };
-  List<LegRisk> _legRisks = [];
   WeatherPoint? _hoverWeather;
   List<WeatherPoint> _weatherPoints = [];
   List<TerrainSample> _terrainSamples = [];
@@ -58,25 +58,6 @@ class _MapViewState extends State<MapView> {
                     urlTemplate: _tileSources[_mapStyle]!,
                     tileProvider: NetworkTileProvider(),
                   ),
-                  if (_legRisks.isNotEmpty)
-                    PolylineLayer(
-                      polylines: List.generate(_legRisks.length, (i) {
-                        final r = 0.5; //_legRisks[i].total;
-                        Color c;
-                        if (r > 0.7) {
-                          c = Colors.redAccent;
-                        } else if (r > 0.4) {
-                          c = Colors.orangeAccent;
-                        } else {
-                          c = Colors.greenAccent;
-                        }
-                        return Polyline(
-                          points: [], // [_legRisks[i].from, _legRisks[i].to],
-                          strokeWidth: 6,
-                          color: c.withOpacity(0.85),
-                        );
-                      }),
-                    ),
                   PolylineLayer(
                     polylines: [
                       Polyline(
@@ -524,192 +505,6 @@ class _MapViewState extends State<MapView> {
             onPressed: () => Navigator.pop(context),
             child: const Text("OK",
                 style: TextStyle(color: Colors.lightBlueAccent)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// MINI TERRAIN PROFILE CHART (ForeFlight Style)
-class _TerrainProfilePainter extends CustomPainter {
-  final List<TerrainSample> samples;
-  final double recommendedAltitude;
-
-  _TerrainProfilePainter(this.samples, this.recommendedAltitude);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paintTerrain = Paint()
-      ..color = Colors.orangeAccent
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke;
-
-    final paintAltitude = Paint()
-      ..color = Colors.lightBlueAccent
-      ..strokeWidth = 1.2
-      ..style = PaintingStyle.stroke;
-
-    if (samples.isEmpty) return;
-
-    final maxElev = samples.map((e) => e.elevationFt).reduce((a, b) => a > b ? a : b);
-    final scale = size.height / (recommendedAltitude * 1.2);
-
-    final ui.Path terrainPath = ui.Path();
-    for (int i = 0; i < samples.length; i++) {
-      final x = (i / (samples.length - 1)) * size.width;
-      final y = size.height - (samples[i].elevationFt * scale);
-      if (i == 0) {
-        terrainPath.moveTo(x, y);
-      } else {
-        terrainPath.lineTo(x, y);
-      }
-    }
-
-    final recommendedY = size.height - (recommendedAltitude * scale);
-
-    canvas.drawPath(terrainPath, paintTerrain);
-    canvas.drawLine(Offset(0, recommendedY), Offset(size.width, recommendedY), paintAltitude);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
-
-// =======================================
-//      WEATHER PROFILE (TOP BAR)
-// =======================================
-
-class RouteWeatherProfile extends StatelessWidget {
-  final List<LegRisk> legRisks;
-  final List<String> waypointNames;
-
-  const RouteWeatherProfile({
-    super.key,
-    required this.legRisks,
-    required this.waypointNames,
-  });
-
-  Color _colorFor(double r) {
-    if (r > 0.7) return Colors.redAccent;
-    if (r > 0.4) return Colors.orangeAccent;
-    return Colors.greenAccent;
-  }
-
-  String _level(double r) {
-    if (r > 0.7) return 'HIGH';
-    if (r > 0.4) return 'MED';
-    return 'LOW';
-  }
-
-  String _categoryFor(LegRisk r) {
-    final double? clouds = 0.0; //r.cloudBaseFt?.toDouble();
-    final double? vis = 0.0; //r.visibilitySm?.toDouble();
-
-    // If cloudBase is missing, assume very high (>10000 ft)
-    final double cloudsSafe = clouds ?? 15000;
-
-    // If visibility is missing, assume very good (>= 10 SM)
-    final double visSafe = vis ?? 10.0;
-
-    if (cloudsSafe < 500 || visSafe < 1.0) {
-      return 'LIFR';
-    } else if (cloudsSafe < 1000 || visSafe < 3.0) {
-      return 'IFR';
-    } else if (cloudsSafe < 3000 || visSafe < 5.0) {
-      return 'MVFR';
-    } else {
-      return 'VFR';
-    }
-  }
-
-  Color _colorForCategory(String category) {
-    switch (category) {
-      case 'LIFR':
-        return Colors.purpleAccent;
-      case 'IFR':
-        return Colors.redAccent;
-      case 'MVFR':
-        return Colors.blueAccent;
-      case 'VFR':
-        return Colors.greenAccent;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (legRisks.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      height: 70,
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E2A35),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Row(
-        children: [
-          const Icon(Icons.cloud, color: Colors.white70, size: 18),
-          const SizedBox(width: 6),
-          const Text(
-            'Route Weather',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Row(
-              children: List.generate(legRisks.length, (i) {
-                final r = 0.5; // legRisks[i].total;
-                final category = _categoryFor(legRisks[i]);
-                final color = _colorForCategory(category);
-                final startName =
-                i < waypointNames.length ? waypointNames[i] : 'WP${i + 1}';
-                final endName = (i + 1) < waypointNames.length
-                    ? waypointNames[i + 1]
-                    : 'WP${i + 2}';
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Text(
-                          '$startName → $endName',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white60,
-                            fontSize: 9,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Container(
-                           height: 14,
-                          decoration: BoxDecoration(
-                            color: color.withOpacity(0.85),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          category,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 9,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-            ),
           ),
         ],
       ),

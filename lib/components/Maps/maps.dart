@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:skyaware/Service/weather_service.dart';
-
-import '../../models/metar_airport.dart';
-import '../../Service/TerrianEngines.dart';
+import 'package:skyaware/Service/WeatherEngine.dart';
+import 'package:skyaware/Service/terrain_engine.dart';
 
 class Maps extends StatefulWidget {
   const Maps({super.key});
@@ -23,7 +22,6 @@ class _MapsState extends State<Maps> {
     'satellite':
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   };
-  List<LegRisk> _legRisks = [];
   WeatherPoint? _hoverWeather;
   List<WeatherPoint> _weatherPoints = [];
   List<TerrainSample> _terrainSamples = [];
@@ -57,25 +55,6 @@ class _MapsState extends State<Maps> {
                     urlTemplate: _tileSources[_mapStyle]!,
                     tileProvider: NetworkTileProvider(),
                   ),
-                  if (_legRisks.isNotEmpty)
-                    PolylineLayer(
-                      polylines: List.generate(_legRisks.length, (i) {
-                        final r = 0.5; //_legRisks[i].total;
-                        Color c;
-                        if (r > 0.7) {
-                          c = Colors.redAccent;
-                        } else if (r > 0.4) {
-                          c = Colors.orangeAccent;
-                        } else {
-                          c = Colors.greenAccent;
-                        }
-                        return Polyline(
-                          points: [], // [_legRisks[i].from, _legRisks[i].to],
-                          strokeWidth: 6,
-                          color: c.withOpacity(0.85),
-                        );
-                      }),
-                    ),
                   PolylineLayer(
                     polylines: [
                       Polyline(

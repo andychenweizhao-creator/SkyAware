@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import "../Service/WeatherEngine.dart";
+import '../Service/WeatherEngine.dart';
 import 'package:latlong2/latlong.dart';
-import '../../../Service/weather_service.dart';
+import '../Service/weather_service.dart';
 import 'package:http/http.dart' as http;
 
 class TerrainSample {
@@ -45,7 +45,8 @@ class TerrainEngine {
     }
 
     // Reuse WeatherEngine's sampling, but fetch elevations in batches
-    final samplesLatLng = WeatherEngine._sampleRoute(path, spacingKm: _spacingKm);
+    final samplesLatLng =
+        WeatherEngine.sampleRoute(path, spacingKm: _spacingKm);
 
     final List<TerrainSample> out = [];
     double maxElevFt = 0;
@@ -78,40 +79,6 @@ class TerrainEngine {
       maxElevationFt: maxElevFt,
       recommendedAltitudeFt: recommendedAltFt,
     );
-  }
-
-  /// Call SRTM NASA 30m DEM via OpenTopoData API.
-  /// Dataset: `srtm30m`
-  static Future<double?> _fetchElevationFt(LatLng p) async {
-    final uri = Uri.https(
-      'api.opentopodata.org',
-      '/v1/srtm30m',
-      {
-        'locations': '${p.latitude},${p.longitude}',
-      },
-    );
-
-    try {
-      final res = await http.get(uri);
-      if (res.statusCode != 200) return null;
-
-      final json = jsonDecode(res.body);
-      if (json is! Map<String, dynamic>) return null;
-
-      final results = json['results'];
-      if (results is! List || results.isEmpty) return null;
-
-      final first = results.first;
-      if (first is! Map<String, dynamic>) return null;
-
-      final elevMeters = first['elevation'];
-      if (elevMeters is! num) return null;
-
-      // meters -> feet
-      return elevMeters.toDouble() * 3.28084;
-    } catch (_) {
-      return null;
-    }
   }
 
   static Future<List<double?>> _fetchElevationsFtBatch(
