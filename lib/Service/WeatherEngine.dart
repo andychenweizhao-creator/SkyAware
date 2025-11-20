@@ -5,15 +5,13 @@ import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
-
-
-
 class WeatherPoint {
   final LatLng position;
   final LegWx weather;
 
   const WeatherPoint(this.position, this.weather);
 }
+
 class LegWx {
   final int weatherCode;
   final double? cloudBaseFt;
@@ -24,13 +22,13 @@ class LegWx {
   final bool convective;
 
   const LegWx({
-  required this.weatherCode,
-  required this.cloudBaseFt,
-  required this.visibilitySm,
-  required this.windDirDeg,
-  required this.windSpeedKt,
-  required this.precipPct,
-  required this.convective,
+    required this.weatherCode,
+    required this.cloudBaseFt,
+    required this.visibilitySm,
+    required this.windDirDeg,
+    required this.windSpeedKt,
+    required this.precipPct,
+    required this.convective,
   });
 }
 

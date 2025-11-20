@@ -5,5 +5,8 @@ A new Flutter project.
 ## Getting Started
 
 ### Things to look into
-- Ensure when altitude changes it still provides accurate weather data.
-- 
+- Fix Dashboard to show relevant information
+  - altitude speed box
+  - wind conditions
+  - flight plan
+  - weather details box
