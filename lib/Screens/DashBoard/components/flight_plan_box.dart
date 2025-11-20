@@ -51,7 +51,7 @@ class _FlightPlanBoxState extends State<FlightPlanBox> {
   StreamSubscription<Position>? _positionStream;
 
   final Map<String, String> _tileSources = {
-    'osm': 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    'osm': 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
     'terrain': 'https://tile.opentopomap.org/{z}/{x}/{y}.png',
     'satellite':
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -328,41 +328,52 @@ class _FlightPlanBoxState extends State<FlightPlanBox> {
   }
 
   @override
-  Widget build(BuildContext context) {
+   Widget build(BuildContext context) {
+
     return Column(
       children: [
-        Expanded(
-          child: FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: _flightPath.isNotEmpty ? _flightPath.first : LatLng(51.5, -0.09),
-              initialZoom: 9.2,
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: _tileSources[_mapStyle],
-                userAgentPackageName: 'com.example.app',
-              ),
-              PolylineLayer(
-                polylines: [
-                  Polyline(
-                    points: _flightPath,
-                    strokeWidth: 4.0,
-                    color: Colors.blue,
-                  ),
-                ],
-              ),
-            ],
+        Container(
+          height: 700,
+          width: 700,
+          child: FlutterMap(options: MapOptions(
+                  initialCenter: _flightPath.isNotEmpty ? _flightPath.first : LatLng(51.5, -0.09),
+                  initialZoom: 9.2,
+                ),
+              children: [
+                       TileLayer(
+                           urlTemplate: _tileSources[_mapStyle],
+                         userAgentPackageName: 'com.example.app',
+                       ),
+                       PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points: _flightPath,
+                             strokeWidth: 4.0,
+                             color: Colors.blue,
+                            ),
+                           ],
+                      ),
+                       ],
           ),
         ),
         Padding(
           padding: const EdgeInsets.all(8.0),
-          child: ElevatedButton(
-            onPressed: _uploadAndParseFpl,
-            child: Text('Upload Flight Plan'),
-          ),
-        ),
+                  child: ElevatedButton(
+                   onPressed: _uploadAndParseFpl,
+                    child: Text('Upload Flight Plan'),
+                  ),
+        )
       ],
     );
+
+  //       Padding(
+  //         padding: const EdgeInsets.all(8.0),
+  //         child: ElevatedButton(
+  //           onPressed: _uploadAndParseFpl,
+  //           child: Text('Upload Flight Plan'),
+  //         ),
+  //       ),
+  //     ],
+  //   );
   }
 }

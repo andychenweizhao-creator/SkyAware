@@ -73,7 +73,7 @@ class DashBoard extends StatelessWidget {
                           SizedBox(height: 20),
                           DepartureTimeBox(),
                           SizedBox(height: 20),
-                          FlightPlanBox(),
+                           FlightPlanBox(),
                           SizedBox(height: 40), // Add some padding at the bottom
                         ],
                       ),
