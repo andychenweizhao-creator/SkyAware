@@ -1,8 +1,3 @@
-// ========================
-//  vfr_analysis_helper.dart
-//  WEATHER PROFILE + DETAIL BUBBLES
-// ========================
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';

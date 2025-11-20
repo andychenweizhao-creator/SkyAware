@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'dart:convert';
 import "../Service/WeatherEngine.dart";
@@ -46,8 +45,7 @@ class TerrainEngine {
     }
 
     // Reuse WeatherEngine's sampling, but fetch elevations in batches
-    final samplesLatLng =
-    WeatherEngine._sampleRoute(path, spacingKm: _spacingKm);
+    final samplesLatLng = WeatherEngine._sampleRoute(path, spacingKm: _spacingKm);
 
     final List<TerrainSample> out = [];
     double maxElevFt = 0;

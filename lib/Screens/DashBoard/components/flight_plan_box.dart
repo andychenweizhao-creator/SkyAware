@@ -1,8 +1,3 @@
-// ========================
-//  flight_plan_box.dart
-//  WEATHER PROFILE + DETAIL BUBBLES
-// ========================
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -63,28 +58,14 @@ class _FlightPlanBoxState extends State<FlightPlanBox> {
   double? _plannedAltitudeFt;
   bool _isRefreshingWeather = false;
 
-  // -------------------------
-  //   VFR ANALYSIS HELPER
-  // -------------------------
+  @override
+  Widget build(BuildContext context){
 
+    return Container(
+      color: Colors.red,
+      width: 200,
+      height: 200
 
-  // -------------------------
-  //      MAIN UI
-  // -------------------------
-
-
-
-
-// =======================================
-//        SMALL WEATHER BUBBLE
-// =======================================
-
-  // -------------------------
-  //   VFR ANALYSIS HELPER
-  // -------------------------
-
-
-// =======================================
-//      ALTITUDE WEATHER PROFILE
-// =======================================
-
+    );
+  }
+}

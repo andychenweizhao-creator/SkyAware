@@ -9,29 +9,20 @@ class DashBoard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        body: Stack
-          (
-          children:
-          [
-            Container
-              (
+        body: Stack(
+          children: [
+            Container(
               margin: EdgeInsets.only(top: 60,left: 30, right: 30),
-              child: Row
-                (
+              child: Row(
                 children: [
-                  Expanded
-                    (
+                  Expanded(
                     child: SingleChildScrollView(
-                      child: Column
-                        (
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children:
-                        [
-                          Text
-                            (
+                        children: [
+                          Text(
                               "Live Monitor",
-                              style: TextStyle
-                                (
+                              style: TextStyle(
                                   fontSize: 50,
                                   fontWeight: FontWeight.bold
                               )
