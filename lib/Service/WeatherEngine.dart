@@ -30,6 +30,7 @@ class WeatherEngine {
     'User-Agent': 'SkyAware/1.0 (your-email@example.com)',
   };
 
+
   static final Distance _dist = const Distance();
 
   static Future<List<WeatherPoint>> fetchRouteWeather(List<LatLng> path) async {
