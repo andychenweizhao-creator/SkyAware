@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../Screens/HomePage/HomePage.dart';
+import '../Screens/HomePage/Homepage.dart';
 import '../Screens/DashBoard/DashBoard.dart';
 import '../Screens/Weather/Weather.dart';
 import '../Screens/Settings/Settings.dart';
@@ -15,7 +15,8 @@ class NavigationbarState extends State<Navigationbar>{
   int currentIndex = 0;
 
   final List<Widget> _pages = [
-    HomePage(title: "HomePage"),
+
+    HomePage(),
     DashBoard(),
     Weather(),
     Settings(),
