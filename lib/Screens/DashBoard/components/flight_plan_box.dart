@@ -1,71 +1,56 @@
 // ========================
 //  flight_plan_box.dart
-//  WEATHER PROFILE + DETAIL BUBBLES
 // ========================
 
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:xml/xml.dart' as xml;
-import 'dart:ui' as ui;
-import 'dart:math' as math;
-
-
 
 import 'Risk_Assesments.dart' hide LegWx;
-
-import 'package:http/http.dart' as http;
-import "../../../components/WeatherIconResolver.dart";
-import "../../../models/metar_airport.dart";
 import "../../../Service/terrain_engine.dart";
 import '../../../Service/WeatherEngine.dart';
 
+import 'terrain_profile_painter.dart';
+import 'route_weather_profile.dart';
+import 'fullscreen_map.dart';
+import 'flight_plan_parser.dart';
+import 'flight_mode.dart';
+import 'flight_plan_map.dart';
+import 'flight_controls.dart';
+import 'risk_analysis_summary.dart';
+
 class FlightPlanBox extends StatefulWidget {
   const FlightPlanBox({super.key});
-
   @override
   _FlightPlanBoxState createState() => _FlightPlanBoxState();
 }
 
-enum FlightMode { auto, preflight, inflight }
-
 class _FlightPlanBoxState extends State<FlightPlanBox> {
-  // =========================
-  //     STATE VARIABLES
-  // =========================
+  FlightMode _flightMode = FlightMode.auto;
+  bool _isRefreshingWeather = false;
   List<LatLng> _flightPath = [];
   List<String> _waypointNames = [];
+  Position? _currentPosition;
+  StreamSubscription<Position>? _positionStream;
   LatLng? _departureAirport;
   LatLng? _arrivalAirport;
-  Position? _currentPosition;
-  final MapController _mapController = MapController();
-  String _mapStyle = 'osm';
-  FlightMode _flightMode = FlightMode.auto;
-  StreamSubscription<Position>? _positionStream;
+  
+  final TextEditingController _altitudeController = TextEditingController();
 
   final Map<String, String> _tileSources = {
-    'osm': 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    'osm': 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     'terrain': 'https://tile.opentopomap.org/{z}/{x}/{y}.png',
-    'satellite':
-    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    'satellite': 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     'wunderground': 'webview',
   };
 
   List<LegRisk> _legRisks = [];
   List<WeatherPoint> _weatherPoints = [];
-  WeatherPoint? _hoverWeather;
   List<TerrainSample> _terrainSamples = [];
   double? _maxTerrainFt;
   double? _recommendedAltitudeFt;
   double? _plannedAltitudeFt;
-  bool _isRefreshingWeather = false;
 
   @override
   void initState() {
@@ -73,307 +58,125 @@ class _FlightPlanBoxState extends State<FlightPlanBox> {
     _initLocationStream();
   }
 
-  @override
-  void dispose() {
-    _positionStream?.cancel();
-    super.dispose();
-  }
-
   Future<void> _initLocationStream() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
+    if (!await Geolocator.isLocationServiceEnabled()) return;
+    if (await Geolocator.checkPermission() == LocationPermission.denied) {
+      if (await Geolocator.requestPermission() == LocationPermission.denied) return;
     }
-    if (permission == LocationPermission.deniedForever) return;
-
-    _positionStream =
-        Geolocator.getPositionStream().listen((Position position) {
-          if (mounted) {
-            setState(() => _currentPosition = position);
-          }
-        });
+    _positionStream = Geolocator.getPositionStream().listen((p) => setState(() => _currentPosition = p));
   }
 
   double? _getReferenceAltitudeFt() {
-    // AUTO MODE
-    if (_flightMode == FlightMode.auto) {
-      final double airspeed = _currentPosition?.speed ?? 0;
-
-      if (airspeed < 10) {
-        // Preflight auto detection — ensure value exists to prevent null altitude → no weather risk shown
-        return _plannedAltitudeFt ?? _recommendedAltitudeFt ?? 15000;
-      } else {
-        if (_currentPosition?.altitude != null) {
-          return _currentPosition!.altitude * 3.28084;
-        }
-        // fallback if GPS altitude unavailable
-        return _recommendedAltitudeFt ?? 15000;
-      }
+    if (_flightMode == FlightMode.inflight) {
+      return (_currentPosition?.altitude != null) ? _currentPosition!.altitude * 3.28084 : (_recommendedAltitudeFt ?? 15000);
     }
-
-    // FORCE PREFLIGHT
     if (_flightMode == FlightMode.preflight) {
       return _plannedAltitudeFt ?? _recommendedAltitudeFt ?? 15000;
     }
-
-    // FORCE IN-FLIGHT WITH GPS
-    if (_currentPosition?.altitude != null) {
-      return _currentPosition!.altitude * 3.28084;
+    // Auto
+    final speed = _currentPosition?.speed ?? 0;
+    if (speed < 10) {
+      return _plannedAltitudeFt ?? _recommendedAltitudeFt ?? 15000;
     }
-
-    // Final fallback ensures weather risks still appear
-    return _recommendedAltitudeFt ?? 15000;
+    return (_currentPosition?.altitude != null) ? _currentPosition!.altitude * 3.28084 : (_recommendedAltitudeFt ?? 15000);
   }
 
-  Future<void> _uploadAndParseFpl() async {
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: false,
-      type: FileType.any,
-    );
+  @override
+  void dispose() { 
+    _positionStream?.cancel(); 
+    _altitudeController.dispose();
+    super.dispose(); 
+  }
 
-    if (result == null) return;
-
-    final file = result.files.single;
-    final lower = file.path!.toLowerCase();
-
-    if (!(lower.endsWith('.fpl') ||
-        lower.endsWith('.xml') ||
-        lower.endsWith('.pln') ||
-        lower.endsWith('.fms') ||
-        lower.endsWith('.txt'))) {
-      if(mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invalid file type.')),
-        );
-      }
-      return;
-    }
-
-    Uint8List? bytes = file.bytes;
-    if (bytes == null && file.path != null) {
-      bytes = await File(file.path!).readAsBytes();
-    }
-    if (bytes == null) return;
-
-    final content = utf8.decode(bytes);
-    List<LatLng> path = [];
-    List<String> names = [];
-
-    bool parsedAsXml = false;
-
+  Future<void> _refreshWeather() async {
+    if (_flightPath.isEmpty) return;
+    setState(() => _isRefreshingWeather = true);
     try {
-      final cleaned = content.replaceAll(RegExp('xmlns="[^"]*"'), '');
-      final document = xml.XmlDocument.parse(cleaned);
-
-      final Map<String, LatLng> waypointLookup = {};
-      for (final wp in document.findAllElements('waypoint')) {
-        final id = wp.findElements('identifier').firstOrNull?.innerText;
-        final latStr = wp.findElements('lat').firstOrNull?.innerText;
-        final lonStr = wp.findElements('lon').firstOrNull?.innerText;
-        if (id != null && latStr != null && lonStr != null) {
-          final lat = double.tryParse(latStr);
-          final lon = double.tryParse(lonStr);
-          if (lat != null && lon != null) {
-            waypointLookup[id] = LatLng(lat, lon);
-          }
-        }
-      }
-
-      final routePoints = document.findAllElements('route-point');
-      if (routePoints.isNotEmpty) {
-        parsedAsXml = true;
-        for (final rp in routePoints) {
-          final id =
-              rp.findElements('waypoint-identifier').firstOrNull?.innerText;
-          if (id != null && waypointLookup.containsKey(id)) {
-            path.add(waypointLookup[id]!);
-            names.add(id);
-          }
-        }
-      }
-
-      final waypoints = document.findAllElements('waypoint', namespace: '*');
-      final fixes = document.findAllElements('fix', namespace: '*');
-
-      if (waypoints.isNotEmpty && !parsedAsXml) {
-        parsedAsXml = true;
-        for (final wp in waypoints) {
-          String? latString =
-              wp.findElements('lat', namespace: '*').firstOrNull?.innerText;
-          String? lonString =
-              wp.findElements('lon', namespace: '*').firstOrNull?.innerText;
-
-          latString ??= wp.getAttribute('lat');
-          lonString ??= wp.getAttribute('lon');
-
-          if (latString != null && lonString != null) {
-            final lat = double.tryParse(latString);
-            final lon = double.tryParse(lonString);
-            if (lat != null && lon != null) {
-              path.add(LatLng(lat, lon));
-              names.add(wp.getAttribute('id') ??
-                  wp.getAttribute('name') ??
-                  'WP${names.length + 1}');
-            }
-          }
-        }
-      }
-
-      if (fixes.isNotEmpty && !parsedAsXml) {
-        parsedAsXml = true;
-        for (final fix in fixes) {
-          final latStr = fix.findElements('lat').firstOrNull?.innerText;
-          final lonStr = fix.findElements('lon').firstOrNull?.innerText;
-          if (latStr != null && lonStr != null) {
-            final lat = double.tryParse(latStr);
-            final lon = double.tryParse(lonStr);
-            if (lat != null && lon != null) {
-              path.add(LatLng(lat, lon));
-              names.add(fix.getAttribute('id') ??
-                  fix.getAttribute('name') ??
-                  'WP${names.length + 1}');
-            }
-          }
-        }
-      }
-
-      final legs = document.findAllElements('leg');
-      if (legs.isNotEmpty && !parsedAsXml) {
-        parsedAsXml = true;
-        for (final leg in legs) {
-          final latStr = leg.getAttribute('lat');
-          final lonStr = leg.getAttribute('lon');
-          if (latStr != null && lonStr != null) {
-            final lat = double.tryParse(latStr);
-            final lon = double.tryParse(lonStr);
-            if (lat != null && lon != null) {
-              path.add(LatLng(lat, lon));
-              names.add(leg.getAttribute('id') ??
-                  leg.getAttribute('name') ??
-                  'WP${names.length + 1}');
-            }
-          }
-        }
-      }
-    } catch (_) {}
-
-    if (!parsedAsXml) {
-      for (final line in content.split('\n')) {
-        final trimmed = line.trim();
-        if (trimmed.isEmpty) continue;
-
-        final parts = trimmed.split(RegExp(r'\s+'));
-        if (parts.length >= 3 &&
-            ['AIRP', 'ADEP', 'ADES', 'WAYP', 'FIX', 'NDB', 'VOR', 'GPS']
-                .contains(parts[0].toUpperCase())) {
-          final lat = double.tryParse(parts[parts.length - 2]);
-          final lon = double.tryParse(parts[parts.length - 1]);
-          if (lat != null && lon != null) {
-            path.add(LatLng(lat, lon));
-            names.add('WP${names.length + 1}');
-          }
-        } else {
-          final ll = trimmed.split(',');
-          if (ll.length == 2) {
-            final lat = double.tryParse(ll[0]);
-            final lon = double.tryParse(ll[1]);
-            if (lat != null && lon != null) {
-              path.add(LatLng(lat, lon));
-              names.add('WP${names.length + 1}');
-            }
-          }
-        }
-      }
+      final wx = await WeatherEngine.fetchRouteWeather(_flightPath, referenceAltitudeFt: _getReferenceAltitudeFt());
+      setState(() { _weatherPoints = wx; });
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Weather Updated")));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) setState(() => _isRefreshingWeather = false);
     }
+  }
 
-    setState(() {
-      _flightPath = path;
-      _waypointNames = names;
-      _departureAirport = path.isNotEmpty ? path.first : null;
-      _arrivalAirport = path.length > 1 ? path.last : null;
-      _weatherPoints = [];
-      _terrainSamples = [];
-      _maxTerrainFt = null;
-      _recommendedAltitudeFt = null;
-    });
-
-    final weatherFuture = WeatherEngine.fetchRouteWeather(path, referenceAltitudeFt: _getReferenceAltitudeFt());
-    final terrainFuture = TerrainEngine.fetchRouteTerrain(path);
-
-    final weatherPoints = await weatherFuture;
-    final terrainSummary = await terrainFuture;
-
-    setState(() {
-      _weatherPoints = weatherPoints;
-      _terrainSamples = terrainSummary.samples;
-      _maxTerrainFt = terrainSummary.maxElevationFt;
-      _recommendedAltitudeFt = terrainSummary.recommendedAltitudeFt;
-    });
-
-    _legRisks = [];
-
-    if (_flightPath.isNotEmpty) {
-      final bounds = LatLngBounds.fromPoints(_flightPath);
-      _mapController.fitCamera(
-        CameraFit.bounds(
-          bounds: bounds,
-          padding: const EdgeInsets.all(50),
-        ),
-      );
+  Future<void> _handleUpload() async {
+    try {
+      final result = await FlightPlanParser.pickAndParse();
+      if (result == null) return;
+      setState(() {
+        _flightPath = result.path;
+        _waypointNames = result.names;
+        _departureAirport = result.path.isNotEmpty ? result.path.first : null;
+        _arrivalAirport = result.path.length > 1 ? result.path.last : null;
+      });
+      
+      final terr = await TerrainEngine.fetchRouteTerrain(_flightPath);
+      setState(() { 
+        _terrainSamples = terr.samples; 
+        _maxTerrainFt = terr.maxElevationFt; 
+        _recommendedAltitudeFt = terr.recommendedAltitudeFt;
+        // Auto-fill planned altitude if empty
+        if (_plannedAltitudeFt == null) {
+          _plannedAltitudeFt = _recommendedAltitudeFt;
+          _altitudeController.text = (_plannedAltitudeFt ?? 0).toStringAsFixed(0);
+        }
+      });
+      await _refreshWeather();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
   @override
-   Widget build(BuildContext context) {
+  Widget build(BuildContext context) {
+    final refAlt = _getReferenceAltitudeFt();
+    final isPreflight = _flightMode == FlightMode.preflight || _flightMode == FlightMode.auto;
 
-    return Column(
-      children: [
-        Container(
-          height: 700,
-          width: 700,
-          child: FlutterMap(options: MapOptions(
-                  initialCenter: _flightPath.isNotEmpty ? _flightPath.first : LatLng(51.5, -0.09),
-                  initialZoom: 9.2,
-                ),
-              children: [
-                       TileLayer(
-                           urlTemplate: _tileSources[_mapStyle],
-                         userAgentPackageName: 'com.example.app',
-                       ),
-                       PolylineLayer(
-                          polylines: [
-                            Polyline(
-                              points: _flightPath,
-                             strokeWidth: 4.0,
-                             color: Colors.blue,
-                            ),
-                           ],
-                      ),
-                       ],
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          FlightControls(
+            currentMode: _flightMode,
+            onModeChanged: (m) {
+              setState(() => _flightMode = m);
+              _refreshWeather(); // Refresh to apply mode/altitude change to weather analysis
+            },
+            altitudeController: _altitudeController,
+            onAltitudeChanged: (val) {
+              setState(() => _plannedAltitudeFt = double.tryParse(val));
+              // Debouncing could be added here, but for now manual refresh or relying on mode change is safer for API limits
+            },
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-                  child: ElevatedButton(
-                   onPressed: _uploadAndParseFpl,
-                    child: Text('Upload Flight Plan'),
-                  ),
-        )
-      ],
+          if (_legRisks.isNotEmpty) RouteWeatherProfile(legRisks: _legRisks, waypointNames: _waypointNames),
+          const SizedBox(height: 12),
+          
+          // RISK ANALYSIS SUMMARY (New Widget)
+          RiskAnalysisSummary(
+            weatherPoints: _weatherPoints,
+            referenceAltitudeFt: refAlt,
+            usePlannedAlt: isPreflight,
+          ),
+          
+          const SizedBox(height: 12),
+          FlightPlanMap(
+            flightPath: _flightPath,
+            waypointNames: _waypointNames,
+            weatherPoints: _weatherPoints,
+            terrainSamples: _terrainSamples,
+            currentPosition: _currentPosition,
+            referenceAltitudeFt: refAlt,
+            flightMode: _flightMode,
+            onUpload: _handleUpload,
+            onFullscreen: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => FullscreenMap(flightPath: _flightPath, waypointNames: _waypointNames, departureAirport: _departureAirport, arrivalAirport: _arrivalAirport, currentPosition: _currentPosition, tileSources: _tileSources, mapStyle: 'osm', legRisks: _legRisks, weatherPoints: _weatherPoints, terrainSamples: _terrainSamples, recommendedAltitudeFt: _recommendedAltitudeFt, plannedAltitudeFt: _plannedAltitudeFt))),
+            onRefreshWeather: _refreshWeather,
+            isRefreshing: _isRefreshingWeather,
+          ),
+          if (_terrainSamples.isNotEmpty && _recommendedAltitudeFt != null) Container(height: 150, color: Colors.black12, child: CustomPaint(painter: TerrainProfilePainter(_terrainSamples, refAlt ?? _recommendedAltitudeFt!))),
+        ],
+      ),
     );
-
-  //       Padding(
-  //         padding: const EdgeInsets.all(8.0),
-  //         child: ElevatedButton(
-  //           onPressed: _uploadAndParseFpl,
-  //           child: Text('Upload Flight Plan'),
-  //         ),
-  //       ),
-  //     ],
-  //   );
   }
 }

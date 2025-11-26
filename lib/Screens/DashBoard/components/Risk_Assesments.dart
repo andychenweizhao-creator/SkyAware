@@ -8,6 +8,8 @@ import 'package:latlong2/latlong.dart';
 class LegWx {
   final int weatherCode;
   final double? cloudBaseFt;
+  final double? cloudTopMinFt;
+  final double? cloudTopFt; // 最顶层最大云顶高度（兼容原逻辑）
   final double? visibilitySm;
   final int? windDirDeg;
   final double? windSpeedKt;
@@ -17,12 +19,38 @@ class LegWx {
   LegWx({
     required this.weatherCode,
     this.cloudBaseFt,
+    this.cloudTopMinFt,
+    this.cloudTopFt,
     this.visibilitySm,
     this.windDirDeg,
     this.windSpeedKt,
     this.precipPct,
     this.convective = false,
   });
+
+  LegWx copyWith({
+    int? weatherCode,
+    double? cloudBaseFt,
+    double? cloudTopMinFt,
+    double? cloudTopFt,
+    double? visibilitySm,
+    int? windDirDeg,
+    double? windSpeedKt,
+    double? precipPct,
+    bool? convective,
+  }) {
+    return LegWx(
+      weatherCode: weatherCode ?? this.weatherCode,
+      cloudBaseFt: cloudBaseFt ?? this.cloudBaseFt,
+      cloudTopMinFt: cloudTopMinFt ?? this.cloudTopMinFt,
+      cloudTopFt: cloudTopFt ?? this.cloudTopFt,
+      visibilitySm: visibilitySm ?? this.visibilitySm,
+      windDirDeg: windDirDeg ?? this.windDirDeg,
+      windSpeedKt: windSpeedKt ?? this.windSpeedKt,
+      precipPct: precipPct ?? this.precipPct,
+      convective: convective ?? this.convective,
+    );
+  }
 
   factory LegWx.empty() {
     return LegWx(weatherCode: 0);

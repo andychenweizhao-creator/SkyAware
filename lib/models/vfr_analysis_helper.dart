@@ -1,25 +1,8 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:xml/xml.dart' as xml;
-import 'dart:ui' as ui;
 import 'dart:math' as math;
 
-
-
-
-
-import 'package:http/http.dart' as http;
-import "../../../components/WeatherIconResolver.dart";
-import "../../../models/metar_airport.dart";
-import "../../../Service/TerrianEngines.dart";
 import '../Service/WeatherEngine.dart';
 
 enum FlightMode { auto, preflight, inflight }
@@ -149,6 +132,20 @@ class VFRAnalysisHelper {
               '$altSourceText is only ${clearanceToBase.toStringAsFixed(0)} ft below the ceiling, not meeting the recommended 500 ft VFR clearance.');
         }
       }
+
+      // === NEW RULE: If altitude is above cloud top and no weather hazards → VFR ===
+      if (refAltFt != null && wx.cloudTopFt != null) {
+        if (refAltFt > wx.cloudTopFt!) {
+          final bool goodVis = (vis ?? 10.0) >= 5.0;
+          final bool noPrecipHaz = (precip == null || precip < 20);
+          if (goodVis && noPrecipHaz) {
+            category = 'VFR';
+            suitability = 'Above cloud layers with acceptable visibility.';
+            hazards.removeWhere((h) => h.contains('cloud') || h.contains('ceiling'));
+            reasons.add('Cruising above cloud tops with adequate visibility meets VFR requirements.');
+          }
+        }
+      }
     }
 
     return {
@@ -160,6 +157,7 @@ class VFRAnalysisHelper {
       'suitability': suitability,
       'reason': reasons.join('\n• '),
       'precip': precip,
+      'cloudTopFt': wx.cloudTopFt,
       'hazards': hazards,
     };
   }
@@ -236,6 +234,7 @@ class VFRAnalysisHelper {
       int? avgWindDir;
       double? avgWindSpeed;
       double? avgPrecip;
+      double? avgCloudTop;
 
       // simple accumulator
       double sumCloud = 0, countCloud = 0;
@@ -243,6 +242,7 @@ class VFRAnalysisHelper {
       double sumDirX = 0, sumDirY = 0, countDir = 0;
       double sumWind = 0, countWind = 0;
       double sumPrecip = 0, countPrecip = 0;
+      double sumCloudTop = 0, countCloudTop = 0;
 
       for (final wp in c) {
         final wx = wp.weather;
@@ -269,12 +269,17 @@ class VFRAnalysisHelper {
           sumPrecip += wx.precipPct!;
           countPrecip++;
         }
+        if (wx.cloudTopFt != null) {
+          sumCloudTop += wx.cloudTopFt!;
+          countCloudTop++;
+        }
       }
 
       avgCloudBase = countCloud > 0 ? sumCloud / countCloud : null;
       avgVis = countVis > 0 ? sumVis / countVis : null;
       avgWindSpeed = countWind > 0 ? sumWind / countWind : null;
       avgPrecip = countPrecip > 0 ? sumPrecip / countPrecip : null;
+      avgCloudTop = countCloudTop > 0 ? sumCloudTop / countCloudTop : null;
 
       if (countDir > 0) {
         final meanDirRad = math.atan2(sumDirY / countDir, sumDirX / countDir);
@@ -287,6 +292,7 @@ class VFRAnalysisHelper {
       final newWx = LegWx(
         weatherCode: baseWx.weatherCode,
         cloudBaseFt: avgCloudBase,
+        cloudTopFt: avgCloudTop,
         visibilitySm: avgVis,
         windDirDeg: avgWindDir,
         windSpeedKt: avgWindSpeed,
@@ -294,7 +300,7 @@ class VFRAnalysisHelper {
         convective: baseWx.convective,
       );
 
-      return WeatherPoint(LatLng(lat, lon), newWx);
+      return WeatherPoint(LatLng(lat, lon), newWx, levels: c.first.levels);
     }
 
     List<WeatherPoint> result = [];
@@ -356,6 +362,7 @@ class VFRAnalysisHelper {
             const SizedBox(height: 4),
             Text('☁ 云底: ${clouds != null ? '${clouds.toStringAsFixed(0)} ft' : '—'}'),
             Text('👀 能见度: ${vis != null ? '${vis.toStringAsFixed(1)} SM' : '—'}'),
+            Text('☁ 云顶: ${wxData['cloudTopFt'] != null ? '${(wxData['cloudTopFt'] as double).toStringAsFixed(0)} ft' : '—'}'),
             Text('💨 风向风速: ${windDir != null && windSpeed != null ? '$windDir° / ${windSpeed.toStringAsFixed(0)} kt' : '—'}'),
             Text('🌧 降水概率: ${precip != null ? '${precip.toStringAsFixed(0)} %' : '—'}'),
           ],
