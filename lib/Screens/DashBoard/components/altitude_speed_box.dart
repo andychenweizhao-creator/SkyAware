@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import '../../../location_service.dart';
+import '../../../Service/location_service.dart';
 
 class AltitudeSpeedBox extends StatefulWidget {
   @override

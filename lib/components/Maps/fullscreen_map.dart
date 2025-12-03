@@ -5,15 +5,15 @@ import 'package:latlong2/latlong.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 
-import '../../../components/WeatherIconResolver.dart';
-import '../../../Service/WeatherEngine.dart'; 
-import '../../../Service/terrain_engine.dart'; 
-import 'Risk_Assesments.dart' hide LegWx;
-import 'weather_analysis_logic.dart';
-import 'weather_hover_bubble.dart';
-import 'terrain_popup.dart';
-import 'flight_mode.dart';
-import 'flight_controls.dart';
+import '../WeatherIconResolver.dart';
+import '../../Service/WeatherEngine.dart';
+import '../../Service/terrain_engine.dart';
+import '../../Screens/DashBoard/components/Risk_Assesments.dart' hide LegWx;
+import '../../Screens/DashBoard/components/weather_analysis_logic.dart';
+import '../../Screens/DashBoard/components/weather_hover_bubble.dart';
+import '../../Screens/DashBoard/components/terrain_popup.dart';
+import '../../Screens/DashBoard/components/flight_mode.dart';
+import '../../Screens/DashBoard/components/flight_controls.dart';
 
 class FullscreenMap extends StatefulWidget {
   final List<LatLng> flightPath;

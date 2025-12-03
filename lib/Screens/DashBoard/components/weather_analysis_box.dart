@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../../../location_service.dart';
+import '../../../Service/location_service.dart';
 import '../../../weather_service.dart';
 import 'package:geolocator/geolocator.dart';
 

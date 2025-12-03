@@ -13,7 +13,7 @@ import '../../../Service/WeatherEngine.dart';
 
 import 'terrain_profile_painter.dart';
 import 'route_weather_profile.dart';
-import 'fullscreen_map.dart';
+import '../../../components/Maps/fullscreen_map.dart';
 import 'flight_plan_parser.dart';
 import 'flight_mode.dart';
 import 'flight_plan_map.dart';
