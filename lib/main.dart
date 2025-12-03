@@ -24,6 +24,7 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: Color(0xFF0A1A2F),
         useMaterial3: true,
       ),
+      debugShowCheckedModeBanner: false,
       home: Navigationbar(),
     );
   }

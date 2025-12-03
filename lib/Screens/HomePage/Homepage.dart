@@ -9,6 +9,19 @@ class HomePage extends StatefulWidget
 }
 class _Homepage extends State<HomePage>
 {
+  Widget background = Container
+    (
+    decoration: const BoxDecoration
+      (
+      gradient: LinearGradient
+        (
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF0A84FF), Color(0xFF5E5CE6), Color(0xFF7D2AE8)],
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context)
   {
@@ -37,27 +50,15 @@ class _Homepage extends State<HomePage>
         (
         children:
         [
-          Container
-            (
-            decoration: const BoxDecoration
-              (
-              gradient: LinearGradient
-                (
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF0A84FF), Color(0xFF5E5CE6), Color(0xFF7D2AE8)],
-                ),
-              ),
-            ),
+          background,
           Container(
             margin: const EdgeInsets.only(top: 40, left: 10),
             child: Expanded(
               child: SingleChildScrollView(
                 child:Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -88,7 +89,7 @@ class _Homepage extends State<HomePage>
                             ],
                           ),
                           Container(
-                            margin: EdgeInsets.only(right: 50,top: 24),
+                            margin: EdgeInsets.only(top: 24),
                             child: Icon(
                               Icons.flight,
                               color: Colors.white,
@@ -97,6 +98,11 @@ class _Homepage extends State<HomePage>
                           )
                         ]
                       ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      "Flight Safety Index",
+                      style: TextStyle(color: Colors.white, fontSize: 27, fontWeight: FontWeight.w600, letterSpacing: 0.3),
+                    ),
                    ]
                 )
              )
