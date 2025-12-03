@@ -159,7 +159,6 @@ class _FlightPlanBoxState extends State<FlightPlanBox> {
             referenceAltitudeFt: refAlt,
             usePlannedAlt: isPreflight,
           ),
-          
           const SizedBox(height: 12),
           FlightPlanMap(
             flightPath: _flightPath,
