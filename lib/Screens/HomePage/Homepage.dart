@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:skyaware/Service/metar_service.dart';
 import 'dart:ui';
 import '../../Service/WeatherEngine.dart';
 class HomePage extends StatefulWidget
@@ -11,6 +12,230 @@ class HomePage extends StatefulWidget
 }
 class _Homepage extends State<HomePage>
 {
+  TextEditingController airportController = TextEditingController();
+  bool isloading = false;
+  List<Map<String, dynamic>> riskFactors = [];
+  List<String> positiveFactors = [];
+
+  List<Map<String, dynamic>> decodedData = [];
+
+  double safetyScore = 0.0;
+  String safetyLabel = "READY";
+  String flightCategory = "";
+
+  final MetarJsonService _metarService = MetarJsonService();
+
+  void _analyzeSafety(Map<String, dynamic> data) {
+    final risks = <Map<String, dynamic>>[];
+    final positives = <String>[];
+    final decoded = <Map<String, String>>[];
+
+    double score = 10.0;
+    String cat = "VFR";
+
+    // --- DECODED FIELDS ---
+    String raw = data['rawOb'] ?? "";
+    String name = data['name'] ?? "";
+    String icao = data['icaoId'] ?? "";
+    String time = data['reportTime'] ?? "";
+
+    decoded.add({"label": "METAR for:", "value": "$icao ($name)"});
+    decoded.add({"label": "Text:", "value": raw});
+    decoded.add({"label": "Conditions at:", "value": time});
+
+    // --- TEMP/DEW ---
+    dynamic tempObj = data['temp'];
+    dynamic dewpObj = data['dewp'];
+    double? temp = (tempObj is num) ? tempObj.toDouble() : null;
+    double? dewp = (dewpObj is num) ? dewpObj.toDouble() : null;
+
+    if (temp != null) {
+      double f = (temp * 9/5) + 32;
+      decoded.add({"label": "Temperature:", "value": "${temp}°C (${f.toStringAsFixed(0)}°F)"});
+    }
+
+    if (temp != null && dewp != null) {
+      double fDew = (dewp * 9/5) + 32;
+      double spread = temp - dewp;
+      double rh = 100 - (5 * spread);
+      if (rh > 100) rh = 100;
+
+      decoded.add({"label": "Dewpoint:", "value": "${dewp}°C (${fDew.toStringAsFixed(0)}°F) (RH = ${rh.toStringAsFixed(0)}%)"});
+
+      if (spread <= 2.0) {
+        score -= 2.0;
+        risks.add({'msg': "High Fog Risk (Spread ≤ 2°C)", 'color': Colors.orange});
+      } else {
+        positives.add("Temp/Dew Spread Good");
+      }
+    }
+
+    // --- ALTIMETER ---
+    dynamic altObj = data['altim'];
+    if (altObj is num) {
+      double alt = altObj.toDouble(); // hPa
+      double inHg = alt * 0.02953;
+      decoded.add({"label": "Pressure (altimeter):", "value": "${inHg.toStringAsFixed(2)} inHg (${alt.round()} hPa)"});
+
+      if (inHg < 29.80) risks.add({'msg': "Low Pressure (${inHg.toStringAsFixed(2)} inHg)", 'color': Colors.orangeAccent});
+    }
+
+    // --- WIND ---
+    dynamic wspd = data['wspd'];
+    dynamic wgst = data['wgst'];
+    dynamic wdir = data['wdir'];
+    double wind = (wspd is num) ? wspd.toDouble() : 0.0;
+    double gust = (wgst is num) ? wgst.toDouble() : 0.0;
+    String dir = (wdir is num) ? "${wdir}°" : "VRB";
+
+    // Convert to MPH for display style matching
+    double mph = wind * 1.15078;
+
+    String windStr = "from the $dir at ${wind.round()} kt (${(wind*0.514).toStringAsFixed(1)} m/s, ${mph.toStringAsFixed(1)} mph)";
+    if (gust > 0) windStr += " Gusting ${gust.round()} kt";
+
+    decoded.add({"label": "Winds:", "value": windStr});
+
+    if (wind > 30 || gust > 35) {
+      score -= 5.0;
+      risks.add({'msg': "Severe Winds ($dir @ ${wind.round()}G${gust.round()}kt)", 'color': Colors.redAccent});
+    } else if (wind > 20 || gust > 25) {
+      score -= 3.0;
+      risks.add({'msg': "Strong Winds ($dir @ ${wind.round()}G${gust.round()}kt)", 'color': Colors.orangeAccent});
+    } else {
+      positives.add("Winds Manageable");
+    }
+
+    // --- VISIBILITY ---
+    dynamic visObj = data['visib'];
+    double? vis;
+    if (visObj is num) vis = visObj.toDouble();
+    else if (visObj is String) vis = double.tryParse(visObj.replaceAll('+', ''));
+
+    if (vis != null) {
+      double km = vis * 1.60934;
+      decoded.add({"label": "Visibility:", "value": "$vis+ mi ($km+ km)"}); // mimicking "10+ mi" style
+
+      if (vis < 1.0) {
+        score -= 6.0;
+        cat = "LIFR";
+        risks.add({'msg': "Extreme Low Visibility ($vis SM)", 'color': Colors.red});
+      } else if (vis < 3.0) {
+        score -= 4.0;
+        if (cat != "LIFR") cat = "IFR";
+        risks.add({'msg': "Visibility < VFR Minimums ($vis SM)", 'color': Colors.redAccent});
+      } else if (vis <= 5.0) {
+        score -= 2.0;
+        if (cat == "VFR") cat = "MVFR";
+        risks.add({'msg': "Marginal Visibility ($vis SM)", 'color': Colors.orange});
+      } else {
+        positives.add("Visibility Good");
+      }
+    }
+
+    // --- CLOUDS ---
+    double? ceiling;
+    final clouds = data['clouds'];
+    String cloudStr = "";
+    if (clouds is List && clouds.isNotEmpty) {
+      List<String> layers = [];
+      for (var c in clouds) {
+        final cover = c['cover']; // SCT, BKN
+        final base = c['base'];   // 2200
+
+        // Convert cover code to full text if desired, e.g. SCT -> scattered clouds
+        String desc = cover.toString().toLowerCase();
+        if (desc == 'sct') desc = "scattered clouds";
+        if (desc == 'bkn') desc = "broken clouds";
+        if (desc == 'ovc') desc = "overcast";
+        if (desc == 'few') desc = "few clouds";
+
+        if (base != null) {
+          // Format: "scattered clouds at 2,200 ft"
+          // Add commas to number
+          // base is typically int
+          String ft = base.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},');
+          layers.add("$desc at $ft ft");
+        }
+
+        // Ceiling logic
+        if ((cover == 'BKN' || cover == 'OVC') && base is num) {
+          if (ceiling == null || base < ceiling) ceiling = base.toDouble();
+        }
+      }
+      cloudStr = layers.join(", ");
+    } else {
+      cloudStr = "sky clear";
+    }
+    decoded.add({"label": "Clouds:", "value": cloudStr});
+
+    if (ceiling != null) {
+      String cFt = ceiling.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]},');
+      decoded.add({"label": "Ceiling:", "value": "$cFt ft"});
+
+      if (ceiling < 500) {
+        score -= 6.0;
+        cat = "LIFR";
+        risks.add({'msg': "LIFR Ceiling (${ceiling.round()} ft)", 'color': Colors.red});
+      } else if (ceiling < 1000) {
+        score -= 4.0;
+        if (cat != "LIFR") cat = "IFR";
+        risks.add({'msg': "IFR Ceiling (${ceiling.round()} ft)", 'color': Colors.redAccent});
+      } else if (ceiling < 3000) {
+        score -= 2.0;
+        if (cat == "VFR") cat = "MVFR";
+        risks.add({'msg': "MVFR Ceiling (${ceiling.round()} ft)", 'color': Colors.orange});
+      } else {
+        positives.add("Ceiling VFR");
+      }
+    } else {
+      // If clear, maybe dont show Ceiling line? Or show "none"?
+      // Screenshot doesn't show "Ceiling" if none, but shows "Ceiling: 7,000 ft" if exists.
+      // Let's skip adding it if null.
+    }
+
+    // --- WEATHER ---
+    String wxString = (data['wxString'] ?? "").toString();
+    // Decode codes? e.g. -RA -> light rain
+    // Simple map for common ones
+    String wxDecoded = wxString;
+    if (wxString.contains("-RA")) wxDecoded = "light rain";
+    else if (wxString.contains("+RA")) wxDecoded = "heavy rain";
+    else if (wxString.contains("RA")) wxDecoded = "rain";
+    else if (wxString.contains("TS")) wxDecoded = "thunderstorm";
+
+    if (wxDecoded.isNotEmpty) {
+      decoded.add({"label": "Weather:", "value": wxDecoded});
+
+      if (wxString.contains("TS")) {
+        score -= 8.0;
+        risks.add({'msg': "Thunderstorms Reported", 'color': Colors.red});
+      } else if (wxString.contains("FZ") || wxString.contains("SN")) {
+        score -= 6.0;
+        risks.add({'msg': "Winter Precip Detected", 'color': Colors.red});
+      }
+    }
+
+    score = score.clamp(0.0, 10.0);
+    String label;
+    if (score >= 8.0) label = "SAFE";
+    else if (score >= 5.0) label = "CAUTION";
+    else label = "DANGER";
+
+    setState(() {
+      safetyScore = score / 10.0;
+      safetyLabel = label;
+      flightCategory = cat;
+      riskFactors = risks;
+      positiveFactors = positives;
+      decodedData = decoded;
+    });
+  }
+
+
+
+
+
   Widget background = Container
     (
     decoration: const BoxDecoration
@@ -23,6 +248,7 @@ class _Homepage extends State<HomePage>
       ),
     ),
   );
+
   Widget title = Row(
       children: [
         Container(
@@ -65,14 +291,123 @@ class _Homepage extends State<HomePage>
         )
       ]
   );
+
   Widget box(){
+    Widget box_header = Text(
+        "Airport Safety Check",
+      style: TextStyle(
+        fontSize: 22,
+        fontWeight: FontWeight.w700,
+        color: Colors.white,
+        letterSpacing: 0.5
+      ),
+    );
+
+    Widget airport_code = SizedBox(
+      width: 240,
+      child: TextField(
+        controller: airportController,
+        style: const TextStyle(color: Colors.white),
+        textAlign: TextAlign.center,
+        decoration: InputDecoration(
+          filled: true,
+          fillColor: Colors.white.withOpacity(0.08),
+          labelText: "Enter ICAO Code",
+          labelStyle: const TextStyle(color: Colors.white70),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          enabledBorder: OutlineInputBorder(
+            borderSide: const BorderSide(color: Colors.white30),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderSide: const BorderSide(color: Colors.white70),
+            borderRadius: BorderRadius.circular(12)
+          ),
+        )
+      )
+    );
+
+
+
+    Widget Safety_Button = ElevatedButton(
+      child: Text(
+        isloading ? "Loading..." : "Check",
+        style: const TextStyle(fontSize: 16)
+      ),
+      onPressed: isloading ? null : () async {
+        setState(() {
+          isloading = true;
+          riskFactors = [];
+          positiveFactors = [];
+          decodedData = [];
+          safetyScore = 0;
+          safetyLabel = "ANALYZING";
+          flightCategory = "";
+        });
+
+        final icao = airportController.text.trim().toUpperCase();
+        final data = await _metarService.getMetarData(icao);
+
+        if (data != null) {
+          _analyzeSafety(data);
+        } else {
+          setState(() {
+            safetyLabel = "NOT FOUND";
+            safetyScore = 0;
+          });
+        }
+
+        setState(() => isloading = false);
+      }
+    );
+
     return ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: BackdropFilter(
+          child: Container(
+              margin: const EdgeInsets.only(left: 30,right: 30),
+              constraints: const BoxConstraints(maxWidth: 460),
+              // padding: const EdgeInsets.symmetric(vertical: 30),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(28),
+                gradient:  LinearGradient(
+                  colors: [Colors.white.withOpacity(0.18), Colors.white.withOpacity(0.05)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                border: Border.all(color: Colors.white.withOpacity(0.35), width: 1.4),
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.white.withOpacity(0.25),
+                      blurRadius: 25,
+                      spreadRadius: -5,
+                      offset: const Offset(-4,-4)
+                  ),
+                  BoxShadow(
+                      color: Colors.black.withOpacity(0.45),
+                      blurRadius: 30,
+                      offset: const Offset(6, 10)
+                  ),
+                ],
+              ),
+              child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                box_header,
+                const SizedBox(height: 20),
+                airport_code,
+                const SizedBox(height: 12),
+                Safety_Button,
+
+              ],
+            ),
+          ),
           filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        )
+        ),
     );
   }
+
 
 
   @override
