@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "876460230034",
+    "project_id": "skyaware-8b2e8",
+    "storage_bucket": "skyaware-8b2e8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:876460230034:android:ab1ba7c8a8a48ec2b56d4b",
+        "android_client_info": {
+          "package_name": "com.example.skyaware"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "876460230034-runln6anedq3uh57adigi4121c88g3u0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCwC3fF2osR7GtAuXR529-qDvnyt4NETu0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "876460230034-runln6anedq3uh57adigi4121c88g3u0.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

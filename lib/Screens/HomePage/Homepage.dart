@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
+import '../../Service/WeatherEngine.dart';
 class HomePage extends StatefulWidget
 {
   @override
@@ -64,12 +65,15 @@ class _Homepage extends State<HomePage>
         )
       ]
   );
-  Widget box =ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-      )
-  );
+  Widget box(){
+    return ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        )
+    );
+  }
+
 
   @override
   Widget build(BuildContext context)
@@ -127,7 +131,7 @@ class _Homepage extends State<HomePage>
                       ),
                     ),
                     const SizedBox(height: 10),
-                     box,
+                     box(),
                   ]
                 )
              )

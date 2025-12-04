@@ -244,7 +244,7 @@ class WeatherEngine {
     final legWx = LegWx(
       weatherCode: code,
       cloudBaseFt: baseFt,
-      cloudTopFt: null, // METAR has no tops
+      cloudTopFt: null,
       visibilitySm: visSm,
       windDirDeg: windDeg,
       windSpeedKt: windKts,
