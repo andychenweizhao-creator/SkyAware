@@ -230,7 +230,7 @@ class _FlightPlanMapState extends State<FlightPlanMap> {
               children: [
                 TileLayer(
                   urlTemplate: _tileSources[_mapStyle]!,
-                  userAgentPackageName: 'com.example.skyaware',
+                  userAgentPackageName: 'com.andy.skyaware',
                 ),
                 PolylineLayer(
                   polylines: [

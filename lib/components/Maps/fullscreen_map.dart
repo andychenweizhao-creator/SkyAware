@@ -206,7 +206,7 @@ class _FullscreenMapState extends State<FullscreenMap> {
               children: [
                 TileLayer(
                   urlTemplate: widget.tileSources[_currentStyle]!,
-                  userAgentPackageName: 'com.example.skyaware',
+                  userAgentPackageName: 'com.andy.skyaware',
                 ),
                 PolylineLayer(polylines: [
                   Polyline(points: widget.flightPath, color: Colors.blue, strokeWidth: 4)

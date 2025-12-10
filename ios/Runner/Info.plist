@@ -55,5 +55,16 @@
 	<true/>
     <key>NSMotionUsageDescription</key>
     <string>This app needs access to motion data to calculate speed and movement.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.876460230034-lth7av2d4l50ncdhqn62pjcfnli2gah6</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

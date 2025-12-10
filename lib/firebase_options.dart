@@ -52,7 +52,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyCwC3fF2osR7GtAuXR529-qDvnyt4NETu0',
-    appId: '1:876460230034:android:ab1ba7c8a8a48ec2b56d4b',
+    appId: '1:876460230034:android:f1a8f1f0d7e7b270b56d4b',
     messagingSenderId: '876460230034',
     projectId: 'skyaware-8b2e8',
     storageBucket: 'skyaware-8b2e8.firebasestorage.app',
@@ -64,6 +64,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '876460230034',
     projectId: 'skyaware-8b2e8',
     storageBucket: 'skyaware-8b2e8.firebasestorage.app',
+    androidClientId: '876460230034-485q4b3rvcf92e3ojar14hjcajieu2v7.apps.googleusercontent.com',
     iosClientId: '876460230034-lth7av2d4l50ncdhqn62pjcfnli2gah6.apps.googleusercontent.com',
     iosBundleId: 'com.example.skyaware',
   );
@@ -74,6 +75,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '876460230034',
     projectId: 'skyaware-8b2e8',
     storageBucket: 'skyaware-8b2e8.firebasestorage.app',
+    androidClientId: '876460230034-485q4b3rvcf92e3ojar14hjcajieu2v7.apps.googleusercontent.com',
     iosClientId: '876460230034-lth7av2d4l50ncdhqn62pjcfnli2gah6.apps.googleusercontent.com',
     iosBundleId: 'com.example.skyaware',
   );
@@ -87,4 +89,5 @@ class DefaultFirebaseOptions {
     storageBucket: 'skyaware-8b2e8.firebasestorage.app',
     measurementId: 'G-9B35GW0BZB',
   );
+
 }

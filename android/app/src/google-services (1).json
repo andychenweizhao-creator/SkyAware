@@ -7,12 +7,20 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:876460230034:android:f1a8f1f0d7e7b270b56d4b",
+        "mobilesdk_app_id": "1:876460230034:android:ab1ba7c8a8a48ec2b56d4b",
         "android_client_info": {
-          "package_name": "com.andy.skyaware"
+          "package_name": "com.example.skyaware"
         }
       },
       "oauth_client": [
+        {
+          "client_id": "876460230034-485q4b3rvcf92e3ojar14hjcajieu2v7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.skyaware",
+            "certificate_hash": "aab35632673b80448268072658f4f43ffc1cfbec"
+          }
+        },
         {
           "client_id": "876460230034-runln6anedq3uh57adigi4121c88g3u0.apps.googleusercontent.com",
           "client_type": 3

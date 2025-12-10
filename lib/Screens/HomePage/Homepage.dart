@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:skyaware/Service/metar_service.dart';
 import 'dart:ui';
 import '../../Service/WeatherEngine.dart';
+import '../Login/login_page.dart';
 class HomePage extends StatefulWidget
 {
   @override
@@ -467,6 +468,20 @@ class _Homepage extends State<HomePage>
                     ),
                     const SizedBox(height: 10),
                      box(),
+                     const SizedBox(height: 30),
+                     ElevatedButton(
+                       style: ElevatedButton.styleFrom(
+                         backgroundColor: Colors.white.withOpacity(0.1),
+                         foregroundColor: Colors.white,
+                         elevation: 0,
+                         side: const BorderSide(color: Colors.white38),
+                       ),
+                       onPressed: () {
+                         Navigator.push(context, MaterialPageRoute(builder: (context) => const LoginPage()));
+                       },
+                       child: const Text("Access Restricted Area (Login)"),
+                     ),
+                     const SizedBox(height: 50),
                   ]
                 )
              )
