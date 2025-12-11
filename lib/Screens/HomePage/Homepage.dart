@@ -233,10 +233,6 @@ class _Homepage extends State<HomePage>
     });
   }
 
-
-
-
-
   Widget background = Container
     (
     decoration: const BoxDecoration

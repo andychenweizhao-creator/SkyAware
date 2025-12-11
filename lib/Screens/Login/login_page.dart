@@ -1,9 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../components/NavigationBar.dart';
-
+import '../../Service/Auth_Service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -13,22 +14,91 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final AuthService _authService = AuthService();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _nameController = TextEditingController();
+  
   bool _isLoading = false;
+  bool haveAccount = false;
   String? _errorMessage;
+  File? _selectedImage;
 
-  Future<void> _login() async {
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+    if (pickedFile != null) {
+      setState(() {
+        _selectedImage = File(pickedFile.path);
+      });
+    }
+  }
+
+  Future<void> _createAccount() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    final name = _nameController.text.trim();
+
+    if (email.isEmpty || password.isEmpty || name.isEmpty) {
+      setState(() {
+        _errorMessage = "Name, email, and password cannot be empty";
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+      await _authService.signUp(
+        email, 
+        password, 
+        displayName: name,
+        profileImage: _selectedImage
       );
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => Navigationbar()),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        _errorMessage = e.message;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = "An unexpected error occurred: $e";
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _login() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      setState(() {
+        _errorMessage = "Email and password cannot be empty";
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await _authService.signIn(email, password);
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => Navigationbar()),
@@ -58,22 +128,14 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) {
+      final user = await _authService.signInWithGoogle();
+      if (user == null) {
         // User canceled the sign-in
         setState(() {
           _isLoading = false;
         });
         return;
       }
-
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final AuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      await FirebaseAuth.instance.signInWithCredential(credential);
 
       if (mounted) {
         Navigator.of(context).pushReplacement(
@@ -88,7 +150,6 @@ class _LoginPageState extends State<LoginPage> {
       setState(() {
         _errorMessage = "Google Sign-In Error: $e";
       });
-      debugPrint("Google Sign-In Error: $e");
     } finally {
       if (mounted) {
         setState(() {
@@ -96,6 +157,13 @@ class _LoginPageState extends State<LoginPage> {
         });
       }
     }
+  }
+
+  String getText() {
+    String myText = haveAccount
+        ? "Don't have an account? Sign Up"
+        : "Already have an account? Login";
+    return myText;
   }
 
   @override
@@ -139,8 +207,8 @@ class _LoginPageState extends State<LoginPage> {
                       color: Colors.white,
                     ),
                     const SizedBox(height: 20),
-                    const Text(
-                      "Welcome Back",
+                    Text(
+                      haveAccount ? "Welcome Back" : "Welcome",
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
@@ -148,14 +216,50 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    const Text(
-                      "Login to SkyAware",
+                    Text(
+                      haveAccount
+                          ? "Login to SkyAware"
+                          : "Create an account with SkyAware",
                       style: TextStyle(
                         fontSize: 16,
                         color: Colors.white70,
                       ),
                     ),
                     const SizedBox(height: 40),
+                    if (!haveAccount) ...[
+                      GestureDetector(
+                        onTap: _pickImage,
+                        child: CircleAvatar(
+                          radius: 40,
+                          backgroundColor: Colors.white.withOpacity(0.2),
+                          backgroundImage: _selectedImage != null
+                              ? FileImage(_selectedImage!)
+                              : null,
+                          child: _selectedImage == null
+                              ? const Icon(Icons.add_a_photo,
+                                  size: 30, color: Colors.white70)
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _nameController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.1),
+                          labelText: "Username",
+                          labelStyle: const TextStyle(color: Colors.white70),
+                          prefixIcon:
+                              const Icon(Icons.person, color: Colors.white70),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
                     TextField(
                       controller: _emailController,
                       style: const TextStyle(color: Colors.white),
@@ -164,7 +268,8 @@ class _LoginPageState extends State<LoginPage> {
                         fillColor: Colors.white.withOpacity(0.1),
                         labelText: "Email",
                         labelStyle: const TextStyle(color: Colors.white70),
-                        prefixIcon: const Icon(Icons.email, color: Colors.white70),
+                        prefixIcon:
+                            const Icon(Icons.email, color: Colors.white70),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -181,7 +286,8 @@ class _LoginPageState extends State<LoginPage> {
                         fillColor: Colors.white.withOpacity(0.1),
                         labelText: "Password",
                         labelStyle: const TextStyle(color: Colors.white70),
-                        prefixIcon: const Icon(Icons.lock, color: Colors.white70),
+                        prefixIcon:
+                            const Icon(Icons.lock, color: Colors.white70),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -202,7 +308,15 @@ class _LoginPageState extends State<LoginPage> {
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: _isLoading ? null : _login,
+                        onPressed: _isLoading
+                            ? null
+                            : () {
+                                if (haveAccount) {
+                                  _login();
+                                } else {
+                                  _createAccount();
+                                }
+                              },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF0A84FF),
                           foregroundColor: Colors.white,
@@ -213,8 +327,8 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         child: _isLoading
                             ? const CircularProgressIndicator(color: Colors.white)
-                            : const Text(
-                                "Login",
+                            : Text(
+                                haveAccount ? "Login" : "Create Account",
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -228,7 +342,8 @@ class _LoginPageState extends State<LoginPage> {
                         Expanded(child: Divider(color: Colors.white24)),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 10),
-                          child: Text("OR", style: TextStyle(color: Colors.white54)),
+                          child: Text("OR",
+                              style: TextStyle(color: Colors.white54)),
                         ),
                         Expanded(child: Divider(color: Colors.white24)),
                       ],
@@ -239,7 +354,8 @@ class _LoginPageState extends State<LoginPage> {
                       height: 50,
                       child: OutlinedButton.icon(
                         onPressed: _isLoading ? null : _signInWithGoogle,
-                        icon: const FaIcon(FontAwesomeIcons.google, color: Colors.white),
+                        icon: const FaIcon(FontAwesomeIcons.google,
+                            color: Colors.white),
                         label: const Text(
                           "Sign in with Google",
                           style: TextStyle(
@@ -249,13 +365,28 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
                         style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: Colors.white.withOpacity(0.5)),
+                          side: BorderSide(
+                              color: Colors.white.withOpacity(0.5)),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
                       ),
                     ),
+                    const SizedBox(
+                      height: 20,
+                    ),
+                    TextButton(
+                      child: Text(
+                        getText(),
+                        style: TextStyle(fontSize: 16, color: Colors.white54),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          haveAccount = !haveAccount;
+                        });
+                      },
+                    )
                   ],
                 ),
               ),

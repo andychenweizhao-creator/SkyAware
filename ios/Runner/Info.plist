@@ -32,6 +32,10 @@
     <string>This app needs continuous location access to track altitude and speed.</string>
     <key>NSLocationUsageDescription</key>
     <string>This app needs access to your location to provide flight tracking and map features.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>This app needs access to your photo library to select a profile picture.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>This app needs access to your camera to take a profile picture.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -62,7 +66,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.876460230034-lth7av2d4l50ncdhqn62pjcfnli2gah6</string>
+				<string>com.andy.skyaware.876460230034-lth7av2d4l50ncdhqn62pjcfnli2gah6</string>
 			</array>
 		</dict>
 	</array>

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import '../Login/login_page.dart';
+import '../../Service/Auth_Service.dart';
 
 class Settings extends StatefulWidget {
   @override
@@ -9,11 +9,10 @@ class Settings extends StatefulWidget {
 }
 
 class _SettingsState extends State<Settings> {
-  final User? user = FirebaseAuth.instance.currentUser;
+  final AuthService _authService = AuthService();
 
   Future<void> _logout() async {
-    await GoogleSignIn().signOut();
-    await FirebaseAuth.instance.signOut();
+    await _authService.signOut();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Logged out successfully")),
@@ -33,7 +32,8 @@ class _SettingsState extends State<Settings> {
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
+        // Use userChanges to listen for profile updates (like photoURL changes)
+        stream: FirebaseAuth.instance.userChanges(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -49,17 +49,26 @@ class _SettingsState extends State<Settings> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    if (currentUser.photoURL != null)
-                      CircleAvatar(
-                        radius: 50,
-                        backgroundImage: NetworkImage(currentUser.photoURL!),
-                      )
-                    else
-                      const CircleAvatar(
-                        radius: 50,
-                        backgroundColor: Colors.grey,
-                        child: Icon(Icons.person, size: 50, color: Colors.white),
+                    ClipOval(
+                      child: Container(
+                        width: 100,
+                        height: 100,
+                        color: Colors.grey,
+                        child: (currentUser.photoURL != null && currentUser.photoURL!.isNotEmpty)
+                            ? Image.network(
+                                currentUser.photoURL!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return const Icon(Icons.person, size: 50, color: Colors.white);
+                                },
+                                loadingBuilder: (context, child, loadingProgress) {
+                                  if (loadingProgress == null) return child;
+                                  return const Center(child: CircularProgressIndicator(color: Colors.white));
+                                },
+                              )
+                            : const Icon(Icons.person, size: 50, color: Colors.white),
                       ),
+                    ),
                     const SizedBox(height: 20),
                     Text(
                       currentUser.displayName ?? "User",
