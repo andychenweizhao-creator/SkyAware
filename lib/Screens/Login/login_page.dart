@@ -260,22 +260,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       const SizedBox(height: 20),
                     ],
-                    TextField(
-                      controller: _emailController,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: Colors.white.withOpacity(0.1),
-                        labelText: "Email",
-                        labelStyle: const TextStyle(color: Colors.white70),
-                        prefixIcon:
-                            const Icon(Icons.email, color: Colors.white70),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
+                    checkEmail(),
                     const SizedBox(height: 20),
                     TextField(
                       controller: _passwordController,
@@ -386,12 +371,75 @@ class _LoginPageState extends State<LoginPage> {
                           haveAccount = !haveAccount;
                         });
                       },
-                    )
+                    ),
+                    Visibility(
+                      visible: haveAccount,
+                      child: TextButton(
+                        onPressed: () async{
+                          try{
+                            await _authService.sendPasswordReset(_emailController.text);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("Resend Link is sent")),
+                            );
+                          }
+                          catch(e){
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(e.toString())),
+                            );
+
+                          }
+                        },
+                        child: Text(
+                          "Forgot Password?",
+                          style: TextStyle(fontSize: 16, color: Colors.white54),
+                        ),
+                        )
+                      ),
                   ],
                 ),
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+  Widget checkEmail(){
+    if(_emailController.text == "" || _emailController.text == null){
+      return TextField(
+        controller: _emailController,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          errorBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: Color(0xFFbd1408), width: 4.0),
+          ),
+          errorText: "Input valid email!!",
+          filled: true,
+          fillColor: Colors.white.withOpacity(0.1),
+          labelText: "Email1",
+          labelStyle: const TextStyle(color: Colors.white70),
+          prefixIcon:
+          const Icon(Icons.email, color: Colors.white70),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            // borderSide: BorderSide.none,
+          ),
+        ),
+      );
+    }
+    return TextField(
+      controller: _emailController,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.1),
+        labelText: "Email",
+        labelStyle: const TextStyle(color: Colors.white70),
+        prefixIcon:
+        const Icon(Icons.email, color: Colors.white70),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
         ),
       ),
     );

@@ -19,7 +19,7 @@ class AuthService {
   // Helper method to save user to Firestore if they don't exist
   Future<void> _saveUserToFirestore(User user) async {
     final userDoc = _firestore.collection('users').doc(user.uid);
-    
+
     try {
       final snapshot = await userDoc.get();
       if (!snapshot.exists) {
@@ -47,7 +47,7 @@ class AuthService {
       print("Error saving user to Firestore: $e");
     }
   }
-  
+
   // Upload Profile Image
   Future<String?> uploadProfileImage(File image, String uid) async {
     try {
@@ -58,10 +58,10 @@ class AuthService {
       }
 
       final ref = _storage.ref().child('user_avatars').child('$uid.jpg');
-      
+
       // Upload task
       final UploadTask uploadTask = ref.putFile(image);
-      
+
       // Optional: Monitor progress
       // uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
       //   print('Progress: ${(snapshot.bytesTransferred / snapshot.totalBytes) * 100} %');
@@ -74,7 +74,8 @@ class AuthService {
     } on FirebaseException catch (e) {
       print("Firebase Storage Error: ${e.code} - ${e.message}");
       if (e.code == 'permission-denied') {
-         print("Warning: Permission denied. Please check your Firebase Storage Security Rules.");
+        print(
+            "Warning: Permission denied. Please check your Firebase Storage Security Rules.");
       }
       return null;
     } catch (e) {
@@ -86,15 +87,15 @@ class AuthService {
   // Sign In with Email & Password
   Future<User?> signIn(String email, String password) async {
     UserCredential result = await _auth.signInWithEmailAndPassword(
-      email: email, 
-      password: password
+        email: email,
+        password: password
     );
-    
+
     // Ensure user exists in Firestore
     if (result.user != null) {
       await _saveUserToFirestore(result.user!);
     }
-    
+
     return result.user;
   }
 
@@ -104,18 +105,20 @@ class AuthService {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) return null;
 
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth = await googleUser
+          .authentication;
       final AuthCredential credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
-      final UserCredential result = await _auth.signInWithCredential(credential);
-      
+      final UserCredential result = await _auth.signInWithCredential(
+          credential);
+
       if (result.user != null) {
         await _saveUserToFirestore(result.user!);
       }
-      
+
       return result.user;
     } catch (e) {
       rethrow;
@@ -123,13 +126,14 @@ class AuthService {
   }
 
   // Sign Up with Email & Password
-  Future<User?> signUp(String email, String password, {String? displayName, File? profileImage}) async {
+  Future<User?> signUp(String email, String password,
+      {String? displayName, File? profileImage}) async {
     UserCredential result = await _auth.createUserWithEmailAndPassword(
         email: email, password: password);
-        
+
     if (result.user != null) {
       String? photoURL;
-      
+
       // Upload image if provided
       if (profileImage != null) {
         photoURL = await uploadProfileImage(profileImage, result.user!.uid);
@@ -137,15 +141,15 @@ class AuthService {
           await result.user!.updatePhotoURL(photoURL);
         }
       }
-    
+
       // Update display name if provided
       if (displayName != null && displayName.isNotEmpty) {
         await result.user!.updateDisplayName(displayName);
       }
-      
+
       // Refresh the user to get the updated profile locally
       await result.user!.reload();
-      
+
       // Get the updated user object
       User? updatedUser = _auth.currentUser;
       if (updatedUser != null) {
@@ -172,7 +176,7 @@ class AuthService {
         }
       }
     }
-    
+
     return result.user;
   }
 
@@ -180,5 +184,24 @@ class AuthService {
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     await _auth.signOut();
+  }
+
+  Future<void> sendPasswordReset(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_mapFirebaseErorr(e));
+    }
+  }
+
+  String _mapFirebaseErorr(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'user-not-found':
+        return 'No user found for that email.';
+      case 'invalid email':
+        return 'Please enter a valid email.';
+      default:
+        return 'Something went wrong. Please try again.';
+    }
   }
 }
