@@ -36,7 +36,8 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
   String _mode = 'VFR'; 
   bool _showRadar = true;
   bool _showWinds = false;
-  bool _showTemps = false; // New: Temperature Overlay
+  bool _showTemps = false;
+  bool _showPrecip = false; // New: Precipitation Overlay
   
   // Advanced Weather State
   double _selectedAltitude = 3000; // New: Altitude Slider
@@ -173,8 +174,8 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
         List<LatLng> newRoute = [];
         
         for (var wp in waypoints) {
-           final latText = wp.findElements('lat').firstOrNull?.text;
-           final lonText = wp.findElements('lon').firstOrNull?.text;
+           final latText = wp.findElements('lat').firstOrNull?.value;
+           final lonText = wp.findElements('lon').firstOrNull?.value;
            
            if (latText != null && lonText != null) {
              double lat = double.parse(latText);
@@ -205,7 +206,6 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
         }
       }
     } catch (e) {
-      print("Error importing FPL: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Error importing plan: $e")),
       );
@@ -215,17 +215,13 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
   Future<void> _packForFlight() async {
      try {
        final directory = await getApplicationDocumentsDirectory();
-       final file = File('${directory.path}/offline_weather.json');
-       
-       // Serialize _routeWeather and _areaWeather
-       // Simplified serialization for this example
-       // In real app, use jsonEncode with toMap() on WeatherPoint
+       // Mock file write
+       // final file = File('${directory.path}/offline_weather.json');
        
        ScaffoldMessenger.of(context).showSnackBar(
          const SnackBar(content: Text("Weather Pack Downloaded (Mock)")),
        );
      } catch (e) {
-       print("Offline error: $e");
        ScaffoldMessenger.of(context).showSnackBar(
          SnackBar(content: Text("Offline Pack Failed: $e")),
        );
@@ -388,7 +384,7 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
         _buildMap(),
         
         // Wind / Temp Visualization Layer
-        if (_showWinds || _showTemps)
+        if (_showWinds || _showTemps || _showPrecip)
            IgnorePointer(
              child: AnimatedBuilder(
                animation: _windAnimController,
@@ -403,6 +399,7 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
                      mapController: _mapController,
                      showWind: _showWinds,
                      showTemp: _showTemps,
+                     showPrecip: _showPrecip,
                    ),
                  );
                }
@@ -493,7 +490,7 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
-            height: 100, 
+            height: 100,
             padding: const EdgeInsets.only(top: 40, left: 20, right: 20, bottom: 10),
             decoration: BoxDecoration(
               color: const Color(0xFF0A1A2F).withOpacity(0.85),
@@ -554,6 +551,11 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
                   onPressed: () => setState(() => _showTemps = !_showTemps),
                   icon: Icon(Icons.thermostat, color: _showTemps ? Colors.redAccent : Colors.white),
                 ),
+                IconButton(
+                  onPressed: () => setState(() => _showPrecip = !_showPrecip),
+                  icon: Icon(Icons.water_drop, color: _showPrecip ? Colors.blue : Colors.white),
+                  tooltip: "Show Precip Aloft",
+                ),
               ],
             ),
           ),
@@ -563,7 +565,7 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
   }
   
   Widget _buildWeatherControls() {
-    if (!_showWinds && !_showTemps) return const SizedBox.shrink();
+    if (!_showWinds && !_showTemps && !_showPrecip) return const SizedBox.shrink();
 
     return Positioned(
       bottom: 20, left: 20, right: 80, // Right padding for zoom buttons
@@ -624,23 +626,6 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildModeBtn(String label, bool active) {
-    return GestureDetector(
-      onTap: () => setState(() => _mode = label),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: active ? const Color(0xFF0A84FF) : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(color: active ? Colors.white : Colors.white54, fontWeight: FontWeight.bold),
-        ),
-      ),
-    );
-  }
-
   Widget _buildInfoPanel() {
     if (_selectedFeature == null) return const SizedBox.shrink();
 
@@ -654,7 +639,10 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
        icon = Icons.local_airport;
        title = "Waypoint";
        subtitle = "${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}";
-       
+       content = [
+         _buildInfoRow("Lat", "${pos.latitude.toStringAsFixed(4)}"),
+         _buildInfoRow("Lon", "${pos.longitude.toStringAsFixed(4)}"),
+       ];
     } else if (_selectedFeature['type'] == 'weather') {
        WeatherPoint wp = _selectedFeature['data'];
        icon = Icons.cloud;
@@ -667,6 +655,7 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
        content = [
           _buildInfoRow("Wind", "${wx.windDirDeg.round()}° @ ${wx.windSpeedKt.round()} kt"),
           _buildInfoRow("Temp", "${wx.temperatureC.toStringAsFixed(1)} °C"),
+          _buildInfoRow("Precip", wx.precip ? (wx.temperatureC < 0 ? "Snow" : "Rain") : "None"),
           _buildInfoRow("Icing Risk", "${(wx.icingRisk * 100).round()}%"),
           _buildInfoRow("Turbulence", "${(wx.turbulenceRisk * 100).round()}%"),
        ];
@@ -731,21 +720,6 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildTab(String text, bool selected) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 24),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: selected ? Colors.white : Colors.white38,
-          fontWeight: FontWeight.bold,
-          decoration: selected ? TextDecoration.underline : null,
-          decorationColor: Colors.cyanAccent,
-        ),
-      ),
-    );
-  }
-
   Widget _buildInfoRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -754,25 +728,6 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
         children: [
           Text(label, style: TextStyle(color: Colors.white.withOpacity(0.5))),
           Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionButton(IconData icon, String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.5)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -822,6 +777,7 @@ class WeatherOverlayPainter extends CustomPainter {
   final MapController mapController;
   final bool showWind;
   final bool showTemp;
+  final bool showPrecip;
 
   WeatherOverlayPainter({
     required this.data,
@@ -831,6 +787,7 @@ class WeatherOverlayPainter extends CustomPainter {
     required this.mapController,
     required this.showWind,
     required this.showTemp,
+    required this.showPrecip,
   });
 
   @override
@@ -839,10 +796,9 @@ class WeatherOverlayPainter extends CustomPainter {
 
     final windPaint = Paint()..strokeCap = StrokeCap.round;
     final tempPaint = Paint()..style = PaintingStyle.fill;
+    final precipPaint = Paint()..strokeWidth = 2.0..strokeCap = StrokeCap.round;
 
     for (var wp in data) {
-      // Convert Geo to Screen
-      // latLngToScreenPoint returns a Point<double>
       final point = mapController.camera.latLngToScreenPoint(wp.position);
       final screenPos = Offset(point.x, point.y);
       
@@ -862,8 +818,11 @@ class WeatherOverlayPainter extends CustomPainter {
          else if (t < 30) tColor = Colors.orangeAccent;
          else tColor = Colors.redAccent;
 
+         // Pulsing effect using animationValue
+         double pulse = 30 + (math.sin(animationValue * math.pi * 2) * 5);
+
          tempPaint.color = tColor.withOpacity(0.3);
-         canvas.drawCircle(screenPos, 30, tempPaint);
+         canvas.drawCircle(screenPos, pulse, tempPaint);
       }
 
       // Draw Wind Particle
@@ -892,6 +851,32 @@ class WeatherOverlayPainter extends CustomPainter {
         // Draw head
         canvas.drawCircle(screenPos + Offset(dx, dy), 2, windPaint);
       }
+      
+      // Draw Precipitation (Rain/Snow)
+      if (showPrecip && wx.precip) {
+         bool isSnow = wx.temperatureC < 0;
+         precipPaint.color = isSnow ? Colors.white : Colors.blueAccent;
+         
+         // Animate falling down
+         double fallDist = 20 * animationValue;
+         // Draw multiple particles around the point
+         for(int i=0; i<3; i++) {
+             double offsetX = (i - 1) * 10.0; 
+             double offsetY = fallDist + (i * 5.0) % 20;
+             
+             if (isSnow) {
+                 // Snowflake (dot)
+                 canvas.drawCircle(screenPos + Offset(offsetX, offsetY), 2, precipPaint);
+             } else {
+                 // Raindrop (line)
+                 canvas.drawLine(
+                   screenPos + Offset(offsetX, offsetY), 
+                   screenPos + Offset(offsetX, offsetY + 5), 
+                   precipPaint
+                 );
+             }
+         }
+      }
     }
   }
 
@@ -901,6 +886,7 @@ class WeatherOverlayPainter extends CustomPainter {
            old.altitude != altitude || 
            old.timeOffset != timeOffset ||
            old.showWind != showWind ||
-           old.showTemp != showTemp;
+           old.showTemp != showTemp ||
+           old.showPrecip != showPrecip;
   }
 }

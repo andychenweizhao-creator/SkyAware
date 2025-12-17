@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'dart:ui' as ui;
+import 'dart:math' as math;
 import '../../models/metar_airport.dart';
 import '../../Service/terrain_engine.dart';
 import '../../Service/WeatherEngine.dart';
@@ -13,7 +15,7 @@ class MapView extends StatefulWidget {
   _MapViewState createState() => _MapViewState();
 }
 
-class _MapViewState extends State<MapView> {
+class _MapViewState extends State<MapView> with TickerProviderStateMixin {
   final MapController _mapController = MapController();
   List<LatLng> _flightPath = [];
   String _mapStyle = 'osm';
@@ -31,13 +33,56 @@ class _MapViewState extends State<MapView> {
   dynamic _currentPosition;
   List<String> _waypointNames = [];
   bool _isRefreshingWeather = false;
-  double? _plannedAltitudeFt;
+  double _plannedAltitudeFt = 0;
+
+  // Animation
+  late AnimationController _windAnimController;
+
+  @override
+  void initState() {
+    super.initState();
+    _windAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _windAnimController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         const SizedBox(height: 15),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: Colors.black54,
+          child: Row(
+            children: [
+               const Icon(Icons.height, color: Colors.white70),
+               const SizedBox(width: 10),
+               Text(
+                 "Alt: ${_plannedAltitudeFt.toInt()} ft", 
+                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
+               ),
+               Expanded(
+                 child: Slider(
+                   value: _plannedAltitudeFt,
+                   min: 0,
+                   max: 40000,
+                   divisions: 40,
+                   activeColor: Colors.amberAccent,
+                   inactiveColor: Colors.white24,
+                   onChanged: (val) => setState(() => _plannedAltitudeFt = val),
+                 ),
+               ),
+            ],
+          ),
+        ),
         SizedBox(
           height: 250,
           child: Stack(
@@ -88,7 +133,7 @@ class _MapViewState extends State<MapView> {
                           height: 110,
                           point: _hoverWeather!.position,
                           child:
-                          _buildHoverWeatherBubble(_hoverWeather!.weather),
+                          _buildHoverWeatherBubble(_hoverWeather!),
                         ),
                       ],
                     ),
@@ -151,12 +196,16 @@ class _MapViewState extends State<MapView> {
                                 point: weatherPoint.position,
                                 child: Builder(
                                   builder: (context) {
-                                    final wxData = _buildVfrAnalysisForPoint(
-                                        weatherPoint.weather);
+                                    dynamic wx = weatherPoint.weather;
+                                    if (_plannedAltitudeFt > 0) {
+                                       wx = weatherPoint.getConditions(_plannedAltitudeFt, 0);
+                                    }
+
+                                    final wxData = _buildVfrAnalysisForPoint(wx);
                                     final String category =
-                                    wxData['category'] as String;
+                                    wxData['category'] as String? ?? 'VFR';
                                     final List<dynamic> hazards =
-                                    wxData['hazards'] as List<dynamic>;
+                                    wxData['hazards'] as List<dynamic>? ?? [];
                                     bool isRisk = [
                                       'MVFR',
                                       'IFR',
@@ -180,7 +229,7 @@ class _MapViewState extends State<MapView> {
                                             ),
                                             content:
                                             _buildHoverWeatherBubble(
-                                                weatherPoint.weather),
+                                                weatherPoint),
                                             actions: [
                                               TextButton(
                                                 onPressed: () =>
@@ -206,9 +255,7 @@ class _MapViewState extends State<MapView> {
                                           ),
                                           const SizedBox(height: 1),
                                           Builder(builder: (context) {
-                                            final wxData =
-                                            _buildVfrAnalysisForPoint(
-                                                weatherPoint.weather);
+                                            
                                             final double? clouds =
                                             wxData['clouds'] as double?;
                                             final double? vis =
@@ -216,9 +263,9 @@ class _MapViewState extends State<MapView> {
                                             final double? precip =
                                             wxData['precip'] as double?;
 
-                                            final int wxCode = weatherPoint
-                                                .weather.weatherCode;
                                             String cond = "";
+                                            int wxCode = wxData['code'] as int? ?? 0;
+                                            
                                             if ([95, 96, 99]
                                                 .contains(wxCode)) {
                                               cond = "TS";
@@ -261,12 +308,20 @@ class _MapViewState extends State<MapView> {
                                               label +=
                                               "${clouds.toStringAsFixed(0)}ft";
                                             }
-                                            if (vis != null) {
+                                            if (vis != null && vis < 10) {
                                               if (label.isNotEmpty) {
                                                 label += " ";
                                               }
                                               label +=
                                               "${vis.toStringAsFixed(1)}SM";
+                                            }
+                                            
+                                            if (_plannedAltitudeFt > 5000) {
+                                                double? temp = wxData['temp'];
+                                                double? wind = wxData['wind'];
+                                                if (temp != null && wind != null) {
+                                                   label = "${temp.toStringAsFixed(0)}C ${wind.toStringAsFixed(0)}kt";
+                                                }
                                             }
 
                                             return SizedBox(
@@ -376,6 +431,29 @@ class _MapViewState extends State<MapView> {
                   ),
                 ],
               ),
+              
+              // Weather Animation Overlay (Always Displayed)
+              IgnorePointer(
+                 child: AnimatedBuilder(
+                   animation: _windAnimController,
+                   builder: (context, child) {
+                     return CustomPaint(
+                       size: MediaQuery.of(context).size,
+                       painter: WeatherOverlayPainter(
+                         data: _weatherPoints,
+                         altitude: _plannedAltitudeFt,
+                         timeOffset: 0,
+                         animationValue: _windAnimController.value,
+                         mapController: _mapController,
+                         showWind: true,
+                         showTemp: false, // Too messy for always on? Or maybe true.
+                         showPrecip: true,
+                       ),
+                     );
+                   }
+                 ),
+              ),
+
               Positioned(
                 right: 15,
                 bottom: 60,
@@ -384,18 +462,19 @@ class _MapViewState extends State<MapView> {
                   mini: true,
                   backgroundColor: Colors.orangeAccent,
                   onPressed: () async {
-                    if (_flightPath.isNotEmpty && !_isRefreshingWeather) {
+                    if (!_isRefreshingWeather) {
                       setState(() => _isRefreshingWeather = true);
 
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text("Refreshing Weather…"),
+                          content: Text("Refreshing Weather Area…"),
                           duration: Duration(seconds: 1),
                         ),
                       );
 
+                      final center = _mapController.camera.center;
                       final weatherPoints =
-                      await WeatherEngine.fetchRouteWeather(_flightPath);
+                      await WeatherEngine.fetchAreaWeather(center, 80);
 
                       setState(() {
                         _weatherPoints = weatherPoints;
@@ -434,20 +513,62 @@ class _MapViewState extends State<MapView> {
     );
   }
 
-  _buildHoverWeatherBubble(weather) {
-    return Container();
+  Widget _buildHoverWeatherBubble(WeatherPoint wp) {
+    dynamic wx = wp.weather;
+    if (_plannedAltitudeFt > 0) wx = wp.getConditions(_plannedAltitudeFt, 0);
+    
+    // Simple display of wx
+    String text = "Station: ${wp.stationId}";
+    if (wx is FlightLevelWx) {
+        text += "\nAlt: ${wx.levelFt}ft";
+        text += "\nWind: ${wx.windDirDeg.toStringAsFixed(0)}° @ ${wx.windSpeedKt.toStringAsFixed(0)}kt";
+        text += "\nTemp: ${wx.temperatureC.toStringAsFixed(1)}°C";
+        if (wx.precip) text += "\nPrecip: Yes";
+    } else if (wx is LegWx) {
+        text += "\nSFC Wind: ${wx.windDirDeg}° @ ${wx.windSpeedKt}kt";
+        text += "\nVis: ${wx.visibilitySm}SM";
+    }
+    
+    return Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)),
+        child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 10))
+    );
   }
 
-  _mergeWeatherPointsAdaptive(List<WeatherPoint> weatherPoints) {
-    return [];
+  List<WeatherPoint> _mergeWeatherPointsAdaptive(List<WeatherPoint> weatherPoints) {
+    return weatherPoints;
   }
 
-  _buildVfrAnalysisForPoint(weather) {
-    return {};
+  Map<String, dynamic> _buildVfrAnalysisForPoint(dynamic weather) {
+      if (weather is LegWx) {
+         return {
+           'category': (weather.visibilitySm ?? 10) < 3 ? 'IFR' : 'VFR',
+           'hazards': weather.convective ? ['TS'] : [],
+           'clouds': weather.cloudBaseFt,
+           'vis': weather.visibilitySm,
+           'precip': weather.precipPct,
+           'code': weather.weatherCode,
+           'temp': null,
+           'wind': weather.windSpeedKt
+         };
+      } else if (weather is FlightLevelWx) {
+         return {
+           'category': 'VFR',
+           'hazards': weather.turbulenceRisk > 0 ? ['TURB'] : [],
+           'clouds': null,
+           'vis': weather.visibilitySm,
+           'precip': weather.precip ? 100.0 : 0.0,
+           'code': 0,
+           'temp': weather.temperatureC,
+           'wind': weather.windSpeedKt
+         };
+      }
+      return {'category': 'VFR', 'hazards': [], 'code': 0};
   }
 
   double? _getReferenceAltitudeFt() {
-    return _plannedAltitudeFt;
+    return _plannedAltitudeFt > 0 ? _plannedAltitudeFt : null;
   }
 
   void _showTerrainPopup(TerrainSample t) {
@@ -508,5 +629,150 @@ class _MapViewState extends State<MapView> {
         ],
       ),
     );
+  }
+}
+
+class WeatherOverlayPainter extends CustomPainter {
+  final List<WeatherPoint> data;
+  final double altitude;
+  final int timeOffset;
+  final double animationValue;
+  final MapController mapController;
+  final bool showWind;
+  final bool showTemp;
+  final bool showPrecip;
+
+  WeatherOverlayPainter({
+    required this.data,
+    required this.altitude,
+    required this.timeOffset,
+    required this.animationValue,
+    required this.mapController,
+    required this.showWind,
+    required this.showTemp,
+    required this.showPrecip,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (data.isEmpty) return;
+
+    final windPaint = Paint()..strokeCap = StrokeCap.round;
+    final tempPaint = Paint()..style = PaintingStyle.fill;
+    final precipPaint = Paint()..strokeWidth = 2.0..strokeCap = StrokeCap.round;
+
+    for (var wp in data) {
+      final point = mapController.camera.latLngToScreenPoint(wp.position);
+      final screenPos = Offset(point.x, point.y);
+      
+      // Optimization: Skip if far off screen
+      if (screenPos.dx < -50 || screenPos.dx > size.width + 50 || 
+          screenPos.dy < -50 || screenPos.dy > size.height + 50) continue;
+
+      dynamic wx;
+      if (altitude > 0) {
+         wx = wp.getConditions(altitude, timeOffset);
+      } else {
+         wx = wp.weather; // Surface
+      }
+
+      // Draw Temperature Blob (Only if Aloft, as surface doesn't have uniform temp display here yet, or adapt)
+      if (showTemp && wx is FlightLevelWx) {
+         double t = wx.temperatureC;
+         Color tColor;
+         if (t < -20) tColor = Colors.purpleAccent;
+         else if (t < 0) tColor = Colors.blueAccent;
+         else if (t < 15) tColor = Colors.greenAccent;
+         else if (t < 30) tColor = Colors.orangeAccent;
+         else tColor = Colors.redAccent;
+
+         // Pulsing effect using animationValue
+         double pulse = 30 + (math.sin(animationValue * math.pi * 2) * 5);
+
+         tempPaint.color = tColor.withOpacity(0.3);
+         canvas.drawCircle(screenPos, pulse, tempPaint);
+      }
+
+      // Draw Wind Particle
+      if (showWind) {
+        double speed = 0;
+        double dir = 0;
+        
+        if (wx is FlightLevelWx) {
+            speed = wx.windSpeedKt;
+            dir = wx.windDirDeg;
+        } else if (wx is LegWx) {
+            speed = wx.windSpeedKt ?? 0;
+            dir = (wx.windDirDeg ?? 0).toDouble();
+        }
+
+        Color wColor = Colors.cyanAccent;
+        if (speed > 30) wColor = Colors.yellowAccent;
+        if (speed > 50) wColor = Colors.orangeAccent;
+        if (speed > 70) wColor = Colors.redAccent;
+
+        windPaint.color = wColor.withOpacity(0.8);
+        windPaint.strokeWidth = 2.0;
+
+        // Animated Position
+        double rad = (dir - 90) * (math.pi / 180.0);
+        double dist = (speed / 2.0) * animationValue; 
+        
+        // Simple flow visualization: Arrow moves away from point
+        double dx = math.cos(rad) * dist;
+        double dy = math.sin(rad) * dist;
+
+        // Draw 'tail' fading out
+        canvas.drawLine(screenPos, screenPos + Offset(dx, dy), windPaint);
+        // Draw head
+        canvas.drawCircle(screenPos + Offset(dx, dy), 2, windPaint);
+      }
+      
+      // Draw Precipitation (Rain/Snow)
+      bool hasPrecip = false;
+      bool isSnow = false;
+      
+      if (wx is FlightLevelWx) {
+          hasPrecip = wx.precip;
+          isSnow = wx.temperatureC < 0;
+      } else if (wx is LegWx) {
+          hasPrecip = (wx.precipPct ?? 0) > 0;
+          isSnow = wx.weatherCode == 71 || wx.weatherCode == 73 || wx.weatherCode == 75; // Simplified
+      }
+
+      if (showPrecip && hasPrecip) {
+         precipPaint.color = isSnow ? Colors.white : Colors.blueAccent;
+         
+         // Animate falling down
+         double fallDist = 20 * animationValue;
+         // Draw multiple particles around the point
+         for(int i=0; i<3; i++) {
+             double offsetX = (i - 1) * 10.0; 
+             double offsetY = fallDist + (i * 5.0) % 20;
+             
+             if (isSnow) {
+                 // Snowflake (dot)
+                 canvas.drawCircle(screenPos + Offset(offsetX, offsetY), 2, precipPaint);
+             } else {
+                 // Raindrop (line)
+                 canvas.drawLine(
+                   screenPos + Offset(offsetX, offsetY), 
+                   screenPos + Offset(offsetX, offsetY + 5), 
+                   precipPaint
+                 );
+             }
+         }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant WeatherOverlayPainter old) {
+    return old.animationValue != animationValue || 
+           old.altitude != altitude || 
+           old.timeOffset != timeOffset ||
+           old.showWind != showWind ||
+           old.showTemp != showTemp ||
+           old.showPrecip != showPrecip;
   }
 }

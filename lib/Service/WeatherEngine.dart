@@ -317,7 +317,7 @@ class WeatherEngine {
       );
       
       double currentTemp = (temp is num) ? temp.toDouble() : 15.0;
-      return WeatherPoint(p, legWx, levels: _generateLevels(currentTemp, windKts, windDeg.toDouble(), stationId), stationId: stationId);
+      return WeatherPoint(p, legWx, levels: _generateLevels(currentTemp, windKts, windDeg.toDouble(), stationId, isPrecip), stationId: stationId);
   }
 
   static WeatherPoint _generateMockWeather(LatLng p) {
@@ -329,20 +329,23 @@ class WeatherEngine {
       double windKts = 5.0 + r.nextInt(15);
       double windDir = (r.nextInt(36) * 10).toDouble();
       
+      // Randomly enable precip for mock data to test visualization
+      bool mockPrecip = r.nextBool() && r.nextBool(); // 25% chance
+
       final legWx = LegWx(
         weatherCode: 0,
         cloudBaseFt: null,
         visibilitySm: 10,
         windDirDeg: windDir.toInt(),
         windSpeedKt: windKts,
-        precipPct: 0,
+        precipPct: mockPrecip ? 100.0 : 0.0,
         convective: false
       );
       
-      return WeatherPoint(p, legWx, levels: _generateLevels(temp, windKts, windDir, "SIM"), stationId: "SIM");
+      return WeatherPoint(p, legWx, levels: _generateLevels(temp, windKts, windDir, "SIM", mockPrecip), stationId: "SIM");
   }
 
-  static List<FlightLevelWx> _generateLevels(double sfcTemp, double sfcWindSpd, double sfcWindDir, String seedStr) {
+  static List<FlightLevelWx> _generateLevels(double sfcTemp, double sfcWindSpd, double sfcWindDir, String seedStr, bool sfcPrecip) {
       final levels = <FlightLevelWx>[]; 
       const levelsFt = [3000, 6000, 9000, 12000, 18000, 24000, 30000, 34000, 39000];
       
@@ -363,17 +366,20 @@ class WeatherEngine {
          
          // Wind direction shifts (Clockwise in N. Hemisphere)
          double lvlDir = (sfcWindDir + (lvl / 1000.0) * 5) % 360;
-  
+         
+         // Precip aloft logic
+         bool levelPrecip = sfcPrecip && lvl < 25000; // Rain/Snow usually below 25k (simplified)
+
          levels.add(FlightLevelWx(
            levelFt: lvl,
            windDirDeg: lvlDir,
            windSpeedKt: lvlSpeed,
            temperatureC: lvlTemp,
            visibilitySm: 999, // Clear aloft usually
-           precip: false,
+           precip: levelPrecip,
            cloudBaseFt: 0,
            cloudTopFt: 0,
-           icingRisk: (lvlTemp < 0 && lvlTemp > -20) ? 0.5 : 0.0,
+           icingRisk: (levelPrecip && lvlTemp < 0 && lvlTemp > -20) ? 0.8 : 0.0,
            turbulenceRisk: (lvlSpeed > 50) ? 0.3 : 0.0,
          ));
       }
