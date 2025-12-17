@@ -19,6 +19,7 @@ import 'flight_mode.dart';
 import 'flight_plan_map.dart';
 import 'flight_controls.dart';
 import 'risk_analysis_summary.dart';
+import 'weight_balance_calculator.dart';
 
 class FlightPlanBox extends StatefulWidget {
   const FlightPlanBox({super.key});
@@ -130,6 +131,29 @@ class _FlightPlanBoxState extends State<FlightPlanBox> {
     }
   }
 
+  Widget _buildUtilityButton({required IconData icon, required String label, required VoidCallback onTap}) {
+    return Material(
+      color: Colors.white.withOpacity(0.1),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.white70, size: 20),
+              const SizedBox(height: 4),
+              Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final refAlt = _getReferenceAltitudeFt();
@@ -150,6 +174,38 @@ class _FlightPlanBoxState extends State<FlightPlanBox> {
               // Debouncing could be added here, but for now manual refresh or relying on mode change is safer for API limits
             },
           ),
+          
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildUtilityButton(
+                    icon: Icons.scale_rounded,
+                    label: "W&B",
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const WeightBalanceCalculator())),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildUtilityButton(
+                    icon: Icons.send_rounded,
+                    label: "File Plan",
+                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Flight Plan Filed (Simulated)"))),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildUtilityButton(
+                    icon: Icons.checklist_rounded,
+                    label: "Checklist",
+                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Checklist Feature Coming Soon"))),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           if (_legRisks.isNotEmpty) RouteWeatherProfile(legRisks: _legRisks, waypointNames: _waypointNames),
           const SizedBox(height: 12),
           

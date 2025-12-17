@@ -297,6 +297,14 @@ class _FlightPlanMapState extends State<FlightPlanMap> {
 
                   // TERRAIN MARKERS 
                   ...displayRisks.map((t) {
+                    final ref = widget.referenceAltitudeFt ?? 0;
+                    final clearance = ref - t.elevationFt;
+                    
+                    // ForeFlight-like Hazard Advisor colors
+                    // Red: < 100ft vertical separation (or collision)
+                    // Yellow: < 1000ft vertical separation
+                    final color = clearance < 100 ? Colors.redAccent : Colors.amber;
+                    
                     return Marker(
                       point: t.position,
                       width: iconSize,
@@ -308,7 +316,7 @@ class _FlightPlanMapState extends State<FlightPlanMap> {
                                 referenceAltitudeFt: widget.referenceAltitudeFt
                               ),
                           child: Icon(Icons.warning,
-                              color: Colors.redAccent, size: iconSize)));
+                              color: color, size: iconSize)));
                   }),
                 ]),
               ],

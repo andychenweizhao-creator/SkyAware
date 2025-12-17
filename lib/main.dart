@@ -6,7 +6,7 @@ import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
-void main()async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (Platform.isIOS) {
     WebViewPlatform.instance = WebKitWebViewPlatform();
@@ -26,8 +26,22 @@ class MyApp extends StatelessWidget {
       title: 'SkyAware',
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: Color(0xFF0A1A2F),
+        scaffoldBackgroundColor: const Color(0xFF0A1A2F),
+        primaryColor: const Color(0xFF0A84FF),
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFF0A84FF),
+          secondary: Color(0xFF7D2AE8),
+          surface: Color(0xFF1C2C54),
+          background: Color(0xFF0A1A2F),
+        ),
         useMaterial3: true,
+        fontFamily: 'Roboto', 
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: ZoomPageTransitionsBuilder(),
+            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          },
+        ),
       ),
       debugShowCheckedModeBanner: false,
       home: Navigationbar(),
