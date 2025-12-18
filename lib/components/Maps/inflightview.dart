@@ -16,6 +16,12 @@ import '../../Screens/DashBoard/components/weather_analysis_box.dart';
 import '../../Screens/DashBoard/components/departure_time_box.dart';
 import '../../Screens/DashBoard/components/flight_plan_box.dart';
 
+import '../../Animations/PreFlightAnimation.dart';
+import '../../Animations/RadarAnimation.dart';
+import '../../Animations/WindAnimation.dart';
+
+
+
 class inflightview extends StatefulWidget{
 
   State <inflightview> createState(){
@@ -23,7 +29,8 @@ class inflightview extends StatefulWidget{
 
   }
 }
-class _inflightview extends State<inflightview>{
+class _inflightview extends State<inflightview>with TickerProviderStateMixin{
+
   String _mode = 'VFR';
   bool _showRadar = true;
   bool _showWinds = false;
@@ -35,6 +42,67 @@ class _inflightview extends State<inflightview>{
 
   LatLng _aircraftPosition = const LatLng(37.96, -112.32);
   double _heading = 45.0;
+
+  // Data
+  final List<LatLng> _route = [];
+  List<WeatherPoint> _routeWeather = [];
+  List<WeatherPoint> _areaWeather = []; // New: Area Weather for visualization
+
+  Timer? _simTimer;
+
+  late PreFlightAnimation _preFlightAnimation;
+  late RadarAnimation _radarAnimation;
+  late WindAnimation _windAnimation;
+
+
+
+  void initState() {
+    super.initState();
+    _preFlightAnimation = PreFlightAnimation(vsync: this,)..start();
+    _radarAnimation = RadarAnimation();
+    _radarAnimation.start(shouldAnimate:() => mounted && _showRadar);
+    _windAnimation = WindAnimation(vsync: this);
+    _startSim();
+    _fetchWeather();
+    _fetchAreaWeather();
+  }
+  void dispose() {
+    _preFlightAnimation.dispose();
+    _windAnimation.dispose();
+    _radarAnimation.dispose();
+    _simTimer?.cancel();
+    super.dispose();
+
+  }
+  void _startSim() {
+    _simTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (!mounted) return;
+      setState(() {
+        // Simple linear movement simulation
+        double lat = _aircraftPosition.latitude + 0.0001;
+        double lon = _aircraftPosition.longitude + 0.0001;
+        _aircraftPosition = LatLng(lat, lon);
+      });
+    });
+  }
+  Future<void> _fetchWeather() async {
+    final wx = await WeatherEngine.fetchRouteWeather(_route);
+    if (mounted) {
+      setState(() {
+        _routeWeather = wx;
+      });
+    }
+  }
+
+  Future<void> _fetchAreaWeather() async {
+    // Fetch a grid around aircraft
+    final wx = await WeatherEngine.fetchAreaWeather(_aircraftPosition, 100);
+    if (mounted) {
+      setState(() {
+        _areaWeather = wx;
+      });
+    }
+  }
 
   Widget build(BuildContext context){
     return _buildInFlightView();
@@ -48,7 +116,7 @@ class _inflightview extends State<inflightview>{
         if (_showWinds || _showTemps || _showPrecip)
           IgnorePointer(
             child: AnimatedBuilder(
-                animation: _windAnimController,
+                animation: _windAnimation.controller(),
                 builder: (context, child) {
                   return CustomPaint(
                     size: MediaQuery.of(context).size,
@@ -56,7 +124,7 @@ class _inflightview extends State<inflightview>{
                       data: _areaWeather.isNotEmpty ? _areaWeather : _routeWeather,
                       altitude: _selectedAltitude,
                       timeOffset: _forecastHour.toInt(),
-                      animationValue: _windAnimController.value,
+                      animationValue: _windAnimation.getvalue(),
                       mapController: _mapController,
                       showWind: _showWinds,
                       showTemp: _showTemps,
@@ -141,6 +209,15 @@ class _inflightview extends State<inflightview>{
         ),
       ],
     );
+  }
+  Future<void> _handleMapTap(LatLng point) async {
+    setState(() => _selectedFeature = null);
+    final wx = await WeatherEngine.fetchSpotWeather(point);
+    if (mounted && wx != null) {
+      setState(() {
+        _selectedFeature = {'type': 'weather', 'data': wx};
+      });
+    }
   }
   Widget _buildTopBar() {
     return Positioned(

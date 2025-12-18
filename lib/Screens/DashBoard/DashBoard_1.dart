@@ -24,46 +24,139 @@ class DashBoard extends StatefulWidget {
 
 class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
   // Pre-flight Animations
-
+  late AnimationController _controller;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
 
   // In-flight Map State
   final MapController _mapController = MapController();
   bool _isInFlight = false; // Toggle between Dashboard (Pre) and Map (In)
 
-
+  // Map App State
+  String _mode = 'VFR'; 
+  bool _showRadar = true;
+  bool _showWinds = false;
+  bool _showTemps = false;
+  bool _showPrecip = false; // New: Precipitation Overlay
   
   // Advanced Weather State
-
-
-
+  double _selectedAltitude = 3000; // New: Altitude Slider
+  double _forecastHour = 0; // New: Time Slider
+  
+  LatLng _aircraftPosition = const LatLng(37.96, -112.32); 
+  double _heading = 45.0;
+  
+  // Data
+  final List<LatLng> _route = [];
   
   dynamic _selectedFeature; 
-
-
+  Timer? _simTimer;
+  List<WeatherPoint> _routeWeather = [];
+  List<WeatherPoint> _areaWeather = []; // New: Area Weather for visualization
 
   // Radar Animation State
+  Timer? _radarTimer;
+  int _radarFrameIndex = 10; // 0 to 10. 10 is current.
+  bool _isRadarPlaying = true;
+  // Frame 0 is -50min, Frame 1 is -45min, ..., Frame 10 is Current
+  final List<String> _radarFrames = [
+    'nexrad-n0q-900913-m50', 'nexrad-n0q-900913-m45',
+    'nexrad-n0q-900913-m40', 'nexrad-n0q-900913-m35',
+    'nexrad-n0q-900913-m30', 'nexrad-n0q-900913-m25',
+    'nexrad-n0q-900913-m20', 'nexrad-n0q-900913-m15',
+    'nexrad-n0q-900913-m10', 'nexrad-n0q-900913-m05',
+    'nexrad-n0q-900913', // Current
+  ];
 
-
+  // Wind Animation
+  late AnimationController _windAnimController;
 
   @override
   void initState() {
     super.initState();
     // Pre-flight Animation Setup
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
+    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutQuad));
+    _controller.forward();
+    
+    // Wind Animation Setup
+    _windAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat();
 
-
-
-
+    // In-flight Setup
+    _startSim();
+    _startRadarAnimation();
+    _fetchWeather();
+    
+    // Initial area weather fetch
+    _fetchAreaWeather();
+  }
 
   @override
   void dispose() {
+    _controller.dispose();
+    _windAnimController.dispose();
+    _simTimer?.cancel();
+    _radarTimer?.cancel();
     super.dispose();
   }
 
+  void _startSim() {
+    _simTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (!mounted) return;
+      setState(() {
+        // Simple linear movement simulation
+        double lat = _aircraftPosition.latitude + 0.0001;
+        double lon = _aircraftPosition.longitude + 0.0001;
+        _aircraftPosition = LatLng(lat, lon);
+      });
+    });
+  }
 
+  void _startRadarAnimation() {
+    _radarTimer?.cancel();
+    _radarTimer = Timer.periodic(const Duration(milliseconds: 800), (timer) {
+      if (!mounted || !_showRadar || !_isRadarPlaying) return;
+      setState(() {
+        _radarFrameIndex++;
+        if (_radarFrameIndex >= _radarFrames.length) {
+          _radarFrameIndex = 0;
+        }
+      });
+    });
+  }
 
+  void _toggleRadarPlay() {
+    setState(() {
+      _isRadarPlaying = !_isRadarPlaying;
+    });
+  }
 
-
-
+  Future<void> _fetchWeather() async {
+    final wx = await WeatherEngine.fetchRouteWeather(_route);
+    if (mounted) {
+      setState(() {
+        _routeWeather = wx;
+      });
+    }
+  }
+  
+  Future<void> _fetchAreaWeather() async {
+    // Fetch a grid around aircraft
+    final wx = await WeatherEngine.fetchAreaWeather(_aircraftPosition, 100);
+    if (mounted) {
+       setState(() {
+          _areaWeather = wx;
+       });
+    }
+  }
 
   Future<void> _importFlightPlan() async {
     try {
@@ -135,7 +228,15 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
      }
   }
   
-
+  Future<void> _handleMapTap(LatLng point) async {
+    setState(() => _selectedFeature = null);
+    final wx = await WeatherEngine.fetchSpotWeather(point);
+    if (mounted && wx != null) {
+      setState(() {
+        _selectedFeature = {'type': 'weather', 'data': wx};
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -151,18 +252,317 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
   // --------------------------------------------------------------------------
   // PRE-FLIGHT VIEW (Dashboard)
   // --------------------------------------------------------------------------
-
+  Widget _buildPreFlightView() {
+    return Stack(
+      children: [
+        // Background Gradient
+        Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF0A1A2F), Color(0xFF1C2C54), Color(0xFF0A1A2F)],
+            ),
+          ),
+        ),
+        // Decorative Orbs
+        Positioned(
+          top: -100,
+          left: -100,
+          child: Container(
+            width: 300,
+            height: 300,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF0A84FF).withOpacity(0.15),
+              boxShadow: [
+                BoxShadow(color: const Color(0xFF0A84FF).withOpacity(0.2), blurRadius: 100, spreadRadius: 20),
+              ],
+            ),
+          ),
+        ),
+        
+        SafeArea(
+          child: FadeTransition(
+            opacity: _fadeAnimation,
+            child: SlideTransition(
+              position: _slideAnimation,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 10.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text("Live Monitor", style: TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: Colors.white)),
+                        ElevatedButton.icon(
+                          onPressed: () => setState(() => _isInFlight = true),
+                          icon: const Icon(Icons.flight_takeoff),
+                          label: const Text("FLY MAP"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFE040FB),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          ),
+                        )
+                      ],
+                    ),
+                    const Text(
+                      "Real-Time Parameter Tracking",
+                      style: TextStyle(color: Colors.white70, fontSize: 18, fontWeight: FontWeight.w400, letterSpacing: 0.2),
+                    ),
+                    const SizedBox(height: 30),
+                    Center(child: AltitudeSpeedBox()),
+                    const SizedBox(height: 20),
+                    Center(child: WeatherAnalysisBox()),
+                    
+                    Padding(
+                      padding: const EdgeInsets.only(top: 40.0, bottom: 20),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(Icons.flight_takeoff, color: Color(0xFF0A84FF), size: 30),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  "Pre-Flight Planning",
+                                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, height: 1.1, color: Colors.white),
+                                ),
+                                SizedBox(height: 8),
+                                Text("3-Hour Weather & Risk Forecast", style: TextStyle(color: Colors.white70, fontSize: 16)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    DepartureTimeBox(),
+                    const SizedBox(height: 20),
+                    FlightPlanBox(),
+                     const SizedBox(height: 20),
+                     Center(
+                       child: OutlinedButton.icon(
+                         onPressed: _importFlightPlan,
+                         icon: const Icon(Icons.upload_file), 
+                         label: const Text("Import Flight Plan (.fpl)"),
+                         style: OutlinedButton.styleFrom(
+                           foregroundColor: Colors.white54,
+                           side: const BorderSide(color: Colors.white24)
+                         ),
+                       ),
+                     ),
+                    const SizedBox(height: 100), 
+                  ],
+                ),
+              ),
+            ),
+          ),
+        )
+      ],
+    );
+  }
 
   // --------------------------------------------------------------------------
   // IN-FLIGHT VIEW (Map)
   // --------------------------------------------------------------------------
-
+  Widget _buildInFlightView() {
+    return Stack(
+      children: [
+        _buildMap(),
+        
         // Wind / Temp Visualization Layer
+        if (_showWinds || _showTemps || _showPrecip)
+           IgnorePointer(
+             child: AnimatedBuilder(
+               animation: _windAnimController,
+               builder: (context, child) {
+                 return CustomPaint(
+                   size: MediaQuery.of(context).size,
+                   painter: WeatherOverlayPainter(
+                     data: _areaWeather.isNotEmpty ? _areaWeather : _routeWeather,
+                     altitude: _selectedAltitude,
+                     timeOffset: _forecastHour.toInt(),
+                     animationValue: _windAnimController.value,
+                     mapController: _mapController,
+                     showWind: _showWinds,
+                     showTemp: _showTemps,
+                     showPrecip: _showPrecip,
+                   ),
+                 );
+               }
+             ),
+           ),
 
+        _buildTopBar(),
+        _buildWeatherControls(),
+        if (_selectedFeature != null) _buildInfoPanel(),
+        _buildBottomControls(),
+      ],
+    );
+  }
 
+  Widget _buildMap() {
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(
+        initialCenter: _aircraftPosition,
+        initialZoom: 7.0,
+        backgroundColor: const Color(0xFF0A1A2F),
+        onTap: (_, point) => _handleMapTap(point),
+        onMapEvent: (evt) {
+           // In real app, re-fetch area weather on move end
+           if (evt is MapEventMoveEnd) {
+             // _fetchAreaWeather(); // Debounced
+           }
+        }
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+          userAgentPackageName: 'com.skyaware.app',
+          subdomains: const ['a', 'b', 'c', 'd'],
+        ),
 
+        if (_showRadar)
+          TileLayer(
+             urlTemplate: 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${_radarFrames[_radarFrameIndex]}/{z}/{x}/{y}.png',
+             tileBuilder: (context, widget, tile) => Opacity(opacity: 0.5, child: widget),
+             key: ValueKey(_radarFrames[_radarFrameIndex]), 
+          ),
 
+        PolylineLayer(
+          polylines: [
+            Polyline(
+              points: _route,
+              strokeWidth: 4.0,
+              color: const Color(0xFFE040FB),
+              isDotted: _mode == 'IFR',
+            ),
+          ],
+        ),
 
+        MarkerLayer(
+          markers: [
+             ..._route.map((p) => Marker(
+                point: p, width: 40, height: 40,
+                child: GestureDetector(
+                  onTap: () => setState(() => _selectedFeature = {'type': 'waypoint', 'pos': p}),
+                  child: const Icon(Icons.trip_origin, color: Colors.cyanAccent, size: 20),
+                ),
+            )),
+            ..._routeWeather.map((wp) => Marker(
+              point: wp.position, width: 30, height: 30,
+              child: GestureDetector(
+                onTap: () => setState(() => _selectedFeature = {'type': 'weather', 'data': wp}),
+                child: Icon(Icons.cloud_circle, color: wp.weather.convective ? Colors.red : Colors.greenAccent, size: 24),
+              ),
+            )),
+            Marker(
+              point: _aircraftPosition, width: 60, height: 60,
+              child: Transform.rotate(
+                angle: _heading * (3.14159 / 180),
+                child: const Icon(Icons.airplanemode_active, color: Colors.amber, size: 40),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTopBar() {
+    return Positioned(
+      top: 0, left: 0, right: 0,
+      child: ClipRRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            height: 100,
+            padding: const EdgeInsets.only(top: 40, left: 20, right: 20, bottom: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0A1A2F).withOpacity(0.85),
+              border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.1))),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                   icon: const Icon(Icons.arrow_back, color: Colors.white),
+                   onPressed: () => setState(() => _isInFlight = false),
+                   tooltip: "End Flight Monitor",
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: TextField(
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: "Search Airport...",
+                        prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                IconButton(
+                  onPressed: _importFlightPlan,
+                  icon: const Icon(Icons.upload_file, color: Colors.white70),
+                  tooltip: "Import Flight Plan",
+                ),
+                 IconButton(
+                  onPressed: _packForFlight,
+                  icon: const Icon(Icons.download_for_offline, color: Colors.blueAccent),
+                  tooltip: "Pack for Flight (Offline)",
+                ),
+                const SizedBox(width: 10),
+                // Toggles
+                IconButton(
+                  onPressed: _toggleRadarPlay,
+                  icon: Icon(_isRadarPlaying ? Icons.pause : Icons.play_arrow, color: Colors.greenAccent),
+                ),
+                IconButton(
+                  onPressed: () => setState(() => _showRadar = !_showRadar),
+                  icon: Icon(Icons.radar, color: _showRadar ? Colors.orangeAccent : Colors.white),
+                ),
+                IconButton(
+                  onPressed: () => setState(() => _showWinds = !_showWinds),
+                  icon: Icon(Icons.air, color: _showWinds ? Colors.cyanAccent : Colors.white),
+                ),
+                 IconButton(
+                  onPressed: () => setState(() => _showTemps = !_showTemps),
+                  icon: Icon(Icons.thermostat, color: _showTemps ? Colors.redAccent : Colors.white),
+                ),
+                IconButton(
+                  onPressed: () => setState(() => _showPrecip = !_showPrecip),
+                  icon: Icon(Icons.water_drop, color: _showPrecip ? Colors.blue : Colors.white),
+                  tooltip: "Show Precip Aloft",
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
   
   Widget _buildWeatherControls() {
     if (!_showWinds && !_showTemps && !_showPrecip) return const SizedBox.shrink();
@@ -368,7 +768,7 @@ class _DashBoardState extends State<DashBoard> with TickerProviderStateMixin {
 // ----------------------------------------------------------------------------
 // PAINTERS
 // ----------------------------------------------------------------------------
-//FIXME:Move this class to its own file
+
 class WeatherOverlayPainter extends CustomPainter {
   final List<WeatherPoint> data;
   final double altitude;
