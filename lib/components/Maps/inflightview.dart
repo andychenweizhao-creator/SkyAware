@@ -219,6 +219,82 @@ class _inflightview extends State<inflightview>with TickerProviderStateMixin{
       });
     }
   }
+  Future<void> _packForFlight() async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      // Mock file write
+      // final file = File('${directory.path}/offline_weather.json');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Weather Pack Downloaded (Mock)")),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Offline Pack Failed: $e")),
+      );
+    }
+  }
+  Future<void> _importFlightPlan() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['fpl', 'xml'],
+      );
+
+      if (result != null && result.files.single.path != null) {
+        File file = File(result.files.single.path!);
+        String content = await file.readAsString();
+        final document = XmlDocument.parse(content);
+
+        final waypoints = document.findAllElements('waypoint');
+        List<LatLng> newRoute = [];
+
+        for (var wp in waypoints) {
+          final latText = wp
+              .findElements('lat')
+              .firstOrNull
+              ?.value;
+          final lonText = wp
+              .findElements('lon')
+              .firstOrNull
+              ?.value;
+
+          if (latText != null && lonText != null) {
+            double lat = double.parse(latText);
+            double lon = double.parse(lonText);
+            newRoute.add(LatLng(lat, lon));
+          }
+        }
+
+        if (newRoute.isNotEmpty) {
+          setState(() {
+            _route.clear();
+            _route.addAll(newRoute);
+            _aircraftPosition = newRoute.first;
+            _isInFlight = true;
+          });
+
+          _fetchWeather();
+          _fetchAreaWeather();
+          _mapController.move(_aircraftPosition, 8.0);
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(
+                "Flight Plan Imported: ${newRoute.length} Waypoints")),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text("No valid waypoints found in FPL file.")),
+          );
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error importing plan: $e")),
+      );
+    }
+  }
   Widget _buildTopBar() {
     return Positioned(
       top: 0, left: 0, right: 0,

@@ -14,11 +14,14 @@ class PreFlightAnimation{
     _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero)
         .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutQuad));
     }
-    void start(){
+
+  Animation<double> get fadeAnimation =>  _fadeAnimation;
+  void start(){
     _controller.forward();
   }
+  Animation<Offset> get slideAnimation =>  _slideAnimation;
 
-    void dispose(){
+  void dispose(){
     _controller.dispose();
   }
 }
