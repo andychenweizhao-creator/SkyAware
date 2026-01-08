@@ -1,24 +1,15 @@
 import 'package:flutter/cupertino.dart';
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
+
 import 'dart:ui';
-import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:xml/xml.dart';
-import '../../Service/WeatherEngine.dart';
+
 import '../../Screens/DashBoard/components/altitude_speed_box.dart';
 import '../../Screens/DashBoard/components/weather_analysis_box.dart';
 import '../../Screens/DashBoard/components/departure_time_box.dart';
 import '../../Screens/DashBoard/components/flight_plan_box.dart';
 
 import '../../Animations/PreFlightAnimation.dart';
-import '../../Animations/RadarAnimation.dart';
-import '../../Animations/WindAnimation.dart';
 
 
 
@@ -27,11 +18,18 @@ class Preflightview extends StatefulWidget {
   Preflightview(this._isInFlight, {super.key});
 
   @override
+
   State<Preflightview> createState() => _PreflightviewState();
 }
 
-class _PreflightviewState extends State<Preflightview> {
+class _PreflightviewState extends State<Preflightview> with TickerProviderStateMixin {
   late PreFlightAnimation _preFlightAnimation;
+  void initState() {
+    super.initState();
+    _preFlightAnimation = PreFlightAnimation(vsync: this);
+    _preFlightAnimation.start();
+  }
+
 
 
   @override
@@ -139,17 +137,18 @@ class _PreflightviewState extends State<Preflightview> {
                     const SizedBox(height: 20),
                     FlightPlanBox(),
                     const SizedBox(height: 20),
-                    Center(
-                      child: OutlinedButton.icon(
-                        onPressed: _importFlightPlan,
-                        icon: const Icon(Icons.upload_file),
-                        label: const Text("Import Flight Plan (.fpl)"),
-                        style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white54,
-                            side: const BorderSide(color: Colors.white24)
-                        ),
-                      ),
-                    ),
+                    //FIXME: Relook at the code below
+                    // Center(
+                    //   child: OutlinedButton.icon(
+                    //     onPressed: _importFlightPlan,
+                    //     icon: const Icon(Icons.upload_file),
+                    //     label: const Text("Import Flight Plan (.fpl)"),
+                    //     style: OutlinedButton.styleFrom(
+                    //         foregroundColor: Colors.white54,
+                    //         side: const BorderSide(color: Colors.white24)
+                    //     ),
+                    //   ),
+                    // ),
                     const SizedBox(height: 100),
                   ],
                 ),

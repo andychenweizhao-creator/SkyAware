@@ -13,6 +13,9 @@ class RadarAnimation{
     'nexrad-n0q-900913-m10', 'nexrad-n0q-900913-m05',
     'nexrad-n0q-900913', // Current
   ];
+  get RadarFrames => _radarFrames;
+  get RadarFrameIndex => _radarFrameIndex;
+  get IsPlaying => _isRadarPlaying;
 
   void start({
     required bool Function() shouldAnimate,

@@ -1,9 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'dart:async';
-import 'dart:convert';
+
 import 'dart:io';
 import 'dart:ui';
-import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -11,18 +11,20 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:xml/xml.dart';
 import '../../Service/WeatherEngine.dart';
-import '../../Screens/DashBoard/components/altitude_speed_box.dart';
-import '../../Screens/DashBoard/components/weather_analysis_box.dart';
-import '../../Screens/DashBoard/components/departure_time_box.dart';
-import '../../Screens/DashBoard/components/flight_plan_box.dart';
+
 
 import '../../Animations/PreFlightAnimation.dart';
 import '../../Animations/RadarAnimation.dart';
 import '../../Animations/WindAnimation.dart';
+import '../WeatherPainter.dart';
 
 
 
 class inflightview extends StatefulWidget{
+  bool _isInFlight = false;
+
+  late MapController _mapController;
+  inflightview(this._isInFlight,this._mapController,{super.key});
 
   State <inflightview> createState(){
     return _inflightview();
@@ -47,12 +49,16 @@ class _inflightview extends State<inflightview>with TickerProviderStateMixin{
   final List<LatLng> _route = [];
   List<WeatherPoint> _routeWeather = [];
   List<WeatherPoint> _areaWeather = []; // New: Area Weather for visualization
-
+  dynamic _selectedFeature;
   Timer? _simTimer;
+
+
+
 
   late PreFlightAnimation _preFlightAnimation;
   late RadarAnimation _radarAnimation;
   late WindAnimation _windAnimation;
+
 
 
 
@@ -125,7 +131,7 @@ class _inflightview extends State<inflightview>with TickerProviderStateMixin{
                       altitude: _selectedAltitude,
                       timeOffset: _forecastHour.toInt(),
                       animationValue: _windAnimation.getvalue(),
-                      mapController: _mapController,
+                      mapController: widget._mapController,
                       showWind: _showWinds,
                       showTemp: _showTemps,
                       showPrecip: _showPrecip,
@@ -144,7 +150,7 @@ class _inflightview extends State<inflightview>with TickerProviderStateMixin{
   }
   Widget _buildMap() {
     return FlutterMap(
-      mapController: _mapController,
+      mapController: widget._mapController,
       options: MapOptions(
           initialCenter: _aircraftPosition,
           initialZoom: 7.0,
@@ -166,9 +172,9 @@ class _inflightview extends State<inflightview>with TickerProviderStateMixin{
 
         if (_showRadar)
           TileLayer(
-            urlTemplate: 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${_radarFrames[_radarFrameIndex]}/{z}/{x}/{y}.png',
+            urlTemplate: 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${_radarAnimation.RadarFrames[_radarAnimation.RadarFrameIndex]}/{z}/{x}/{y}.png',
             tileBuilder: (context, widget, tile) => Opacity(opacity: 0.5, child: widget),
-            key: ValueKey(_radarFrames[_radarFrameIndex]),
+            key: ValueKey(_radarAnimation.RadarFrames[_radarAnimation.RadarFrameIndex]),
           ),
 
         PolylineLayer(
@@ -271,12 +277,12 @@ class _inflightview extends State<inflightview>with TickerProviderStateMixin{
             _route.clear();
             _route.addAll(newRoute);
             _aircraftPosition = newRoute.first;
-            _isInFlight = true;
+            widget._isInFlight = true;
           });
 
           _fetchWeather();
           _fetchAreaWeather();
-          _mapController.move(_aircraftPosition, 8.0);
+          widget._mapController.move(_aircraftPosition, 8.0);
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(
@@ -312,7 +318,7 @@ class _inflightview extends State<inflightview>with TickerProviderStateMixin{
               children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () => setState(() => _isInFlight = false),
+                  onPressed: () => setState(() => widget._isInFlight = false),
                   tooltip: "End Flight Monitor",
                 ),
                 const SizedBox(width: 10),
@@ -348,8 +354,8 @@ class _inflightview extends State<inflightview>with TickerProviderStateMixin{
                 const SizedBox(width: 10),
                 // Toggles
                 IconButton(
-                  onPressed: _toggleRadarPlay,
-                  icon: Icon(_isRadarPlaying ? Icons.pause : Icons.play_arrow, color: Colors.greenAccent),
+                  onPressed: _radarAnimation.IsPlaying,
+                  icon: Icon(_radarAnimation.IsPlaying ? Icons.pause : Icons.play_arrow, color: Colors.greenAccent),
                 ),
                 IconButton(
                   onPressed: () => setState(() => _showRadar = !_showRadar),
@@ -372,6 +378,19 @@ class _inflightview extends State<inflightview>with TickerProviderStateMixin{
             ),
           ),
         ),
+      ),
+    );
+  }
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(color: Colors.white.withOpacity(0.5))),
+          Text(value, style: const TextStyle(
+              color: Colors.white, fontWeight: FontWeight.w500)),
+        ],
       ),
     );
   }
@@ -539,21 +558,21 @@ class _inflightview extends State<inflightview>with TickerProviderStateMixin{
             heroTag: "center_map", mini: true,
             backgroundColor: const Color(0xFF1C2C54),
             child: const Icon(Icons.my_location, color: Colors.white),
-            onPressed: () => _mapController.move(_aircraftPosition, 10),
+            onPressed: () => widget._mapController.move(_aircraftPosition, 10),
           ),
           const SizedBox(height: 12),
           FloatingActionButton(
             heroTag: "zoom_in", mini: true,
             backgroundColor: const Color(0xFF1C2C54),
             child: const Icon(Icons.add, color: Colors.white),
-            onPressed: () => _mapController.move(_mapController.camera.center, _mapController.camera.zoom + 1),
+            onPressed: () =>widget._mapController.move(widget._mapController.camera.center, widget._mapController.camera.zoom + 1),
           ),
           const SizedBox(height: 12),
           FloatingActionButton(
             heroTag: "zoom_out", mini: true,
             backgroundColor: const Color(0xFF1C2C54),
             child: const Icon(Icons.remove, color: Colors.white),
-            onPressed: () => _mapController.move(_mapController.camera.center, _mapController.camera.zoom - 1),
+            onPressed: () => widget._mapController.move(widget._mapController.camera.center, widget._mapController.camera.zoom - 1),
           ),
         ],
       ),
