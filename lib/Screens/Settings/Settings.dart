@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../Login /login_page.dart';
+import '../../Login/login_page.dart';
 
 
 class Settings extends StatefulWidget {
@@ -264,7 +264,7 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text("Login / Sign Up"),
+                child: const Text("Login/ Sign Up"),
               ),
             ),
           ],

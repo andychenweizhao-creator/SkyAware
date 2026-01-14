@@ -529,7 +529,7 @@ class _CollapsibleActionFabState extends State<CollapsibleActionFab> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOutBack,
-        width: _isExpanded ? 180 : 56,
+        width: _isExpanded ? 180 : 65,
         height: 56,
         decoration: BoxDecoration(
           color: Colors.black.withOpacity(0.4),
