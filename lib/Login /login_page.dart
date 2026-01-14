@@ -3,10 +3,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../components/NavigationBar.dart';
-import '../../Service/Auth_Service.dart';
+import '../NavigationBar.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -16,7 +14,6 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMixin {
-  final AuthService _authService = AuthService();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final GlobalKey<FormFieldState> _emailKey = GlobalKey<FormFieldState>();
   
@@ -80,12 +77,14 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     });
 
     try {
-      await _authService.signUp(
-        email, 
-        password, 
-        displayName: name,
-        profileImage: _selectedImage
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email, 
+        password: password,
       );
+      if (name.isNotEmpty && FirebaseAuth.instance.currentUser != null) {
+        await FirebaseAuth.instance.currentUser!.updateDisplayName(name);
+      }
+      
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => Navigationbar()),
@@ -120,7 +119,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     });
 
     try {
-      await _authService.signIn(email, password);
+      await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => Navigationbar()),
@@ -143,43 +142,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     }
   }
 
-  Future<void> _signInWithGoogle() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final user = await _authService.signInWithGoogle();
-      if (user == null) {
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
-
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => Navigationbar()),
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      setState(() {
-        _errorMessage = e.message;
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = "Google Sign-In Error: $e";
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
   Future<void> _resetPassword() async {
     // Validate only the email field using its specific key
     if (_emailKey.currentState != null && !_emailKey.currentState!.validate()) {
@@ -189,7 +151,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     final email = _emailController.text.trim();
     
     try{
-      await _authService.sendPasswordReset(email);
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
       if(mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Resend Link is sent")),
@@ -460,30 +422,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                               
                               const SizedBox(height: 24),
                               
-                              SizedBox(
-                                width: double.infinity,
-                                height: 50,
-                                child: OutlinedButton.icon(
-                                  onPressed: _isLoading ? null : _signInWithGoogle,
-                                  icon: const FaIcon(FontAwesomeIcons.google, color: Colors.white, size: 18),
-                                  label: const Text(
-                                    "Sign in with Google",
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  style: OutlinedButton.styleFrom(
-                                    side: BorderSide(color: Colors.white.withOpacity(0.2)),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              
-                              const SizedBox(height: 24),
+                              // Google Sign In Removed
                               
                               TextButton(
                                 onPressed: () {

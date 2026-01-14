@@ -1,9 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '../Login/login_page.dart';
-import '../../Service/Auth_Service.dart';
+import '../../Login /login_page.dart';
+
 
 class Settings extends StatefulWidget {
   const Settings({super.key});
@@ -13,7 +12,6 @@ class Settings extends StatefulWidget {
 }
 
 class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin {
-  final AuthService _authService = AuthService();
   bool _notificationsEnabled = true;
   bool _darkMode = true;
   
@@ -42,7 +40,7 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
   }
 
   Future<void> _logout() async {
-    await _authService.signOut();
+    await FirebaseAuth.instance.signOut();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Logged out successfully")),
