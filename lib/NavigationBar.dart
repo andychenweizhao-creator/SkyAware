@@ -1,9 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:skyaware/Screens/Weather/WeatherPage.dart';
 import '../Screens/HomePage/Homepage.dart';
 import '../Screens/DashBoard/DashBoard.dart';
 import '../Screens/Settings/Settings.dart';
-import '../Screens/Weather/Weather.dart';
 
 class Navigationbar extends StatefulWidget{
   const Navigationbar({super.key});
@@ -20,7 +21,7 @@ class NavigationbarState extends State<Navigationbar>{
   final List<Widget> _pages = [
     const HomePage(),
     const DashBoard(),
-    const Weather(),
+    const WeatherPage(),
     const Settings(),
   ];
 
@@ -28,6 +29,7 @@ class NavigationbarState extends State<Navigationbar>{
     setState(() {
       currentIndex = index;
     });
+    HapticFeedback.lightImpact();
   }
 
   @override
@@ -38,27 +40,50 @@ class NavigationbarState extends State<Navigationbar>{
         index: currentIndex,
         children: _pages,
       ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(30),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              height: 70,
+      bottomNavigationBar: _buildGlassNavigationBar(),
+    );
+  }
+
+  Widget _buildGlassNavigationBar() {
+    return Container(
+      // Lift it off the bottom to make it floating
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+      height: 70, // Explicit height
+      decoration: BoxDecoration(
+        color: Colors.transparent, // Container itself is transparent
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 30,
+            spreadRadius: -5,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      // ClipRRect creates the rounded pill shape
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(40),
+        child: Stack(
+          children: [
+            // Layer A: The Blur Effect (BackdropFilter)
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 25.0, sigmaY: 25.0),
+              child: Container(color: Colors.transparent),
+            ),
+            // Layer B: The Tint (Semi-Transparent Color)
+            Container(
               decoration: BoxDecoration(
-                color: const Color(0xFF0A1A2F).withOpacity(0.85),
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: Colors.white.withOpacity(0.1), width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
-                    blurRadius: 20,
-                    spreadRadius: 0,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
+                // Use a very dark, low opacity tint to allow background to shine through but stay legible
+                color: const Color(0xFF0A1A2F).withOpacity(0.4), 
+                borderRadius: BorderRadius.circular(40),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.15),
+                  width: 1.0,
+                ),
               ),
+            ),
+            // Layer C: The Actual Row of Icons
+            Center(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -69,7 +94,7 @@ class NavigationbarState extends State<Navigationbar>{
                 ],
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -85,7 +110,7 @@ class NavigationbarState extends State<Navigationbar>{
         curve: Curves.easeOutCubic,
         padding: EdgeInsets.symmetric(horizontal: isSelected ? 20 : 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white.withOpacity(0.1) : Colors.transparent,
+          color: isSelected ? Colors.white.withOpacity(0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Column(
@@ -96,20 +121,9 @@ class NavigationbarState extends State<Navigationbar>{
               duration: const Duration(milliseconds: 200),
               child: Icon(
                 icon,
-                color: isSelected ? const Color(0xFF0A84FF) : Colors.white54,
+                color: isSelected ? Colors.white : Colors.white.withOpacity(0.5),
                 size: 24,
               ),
-            ),
-            const SizedBox(height: 4),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 200),
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.white54,
-                fontSize: 10,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                fontFamily: 'Roboto',
-              ),
-              child: Text(label),
             ),
           ],
         ),
