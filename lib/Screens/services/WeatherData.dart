@@ -18,6 +18,12 @@ class _WeatherState extends State<Weather> with SingleTickerProviderStateMixin {
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
+  double temputureData=0;
+  double windData=0;
+  double cloudData=0;
+  double precipitationData=0;
+
+
   // Hazard Data State
   List<dynamic> _fetchedData = [];
   bool _isLoading = false;
