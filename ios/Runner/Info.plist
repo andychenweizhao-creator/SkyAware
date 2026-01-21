@@ -24,18 +24,6 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>This app needs access to location when open.</string>
-    <key>NSLocationAlwaysUsageDescription</key>
-    <string>This app needs access to location when in the background.</string>
-    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>This app needs continuous location access to track altitude and speed.</string>
-    <key>NSLocationUsageDescription</key>
-    <string>This app needs access to your location to provide flight tracking and map features.</string>
-    <key>NSPhotoLibraryUsageDescription</key>
-    <string>This app needs access to your photo library to select a profile picture.</string>
-    <key>NSCameraUsageDescription</key>
-    <string>This app needs access to your camera to take a profile picture.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -57,8 +45,20 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-    <key>NSMotionUsageDescription</key>
-    <string>This app needs access to motion data to calculate speed and movement.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app needs access to location when open.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>This app needs access to location when in the background.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>This app needs continuous location access to track altitude and speed.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>This app needs access to your location to provide flight tracking and map features.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>This app needs access to motion data to calculate speed and movement.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library to select a profile picture.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs access to your camera to take a profile picture.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
