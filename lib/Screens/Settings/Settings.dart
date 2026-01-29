@@ -1,8 +1,9 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../Login/login_page.dart';
-
+import 'package:provider/provider.dart';
+import 'package:skyaware/UI/theme_controller.dart';
+import '../Login/login_page.dart';
 
 class Settings extends StatefulWidget {
   const Settings({super.key});
@@ -13,8 +14,7 @@ class Settings extends StatefulWidget {
 
 class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin {
   bool _notificationsEnabled = true;
-  bool _darkMode = true;
-  
+
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -51,25 +51,34 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
+    final themeController = Provider.of<ThemeController>(context);
+    final isDark = themeController.isDarkMode;
+    final textColor = isDark ? Colors.white : const Color(0xFF0A1A2F);
+    final secondaryTextColor = isDark ? Colors.white.withValues(alpha: 0.6) : const Color(0xFF0A1A2F).withValues(alpha: 0.6);
+    final containerColor = isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05);
+    final borderColor = isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05);
+
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1A2F),
+      backgroundColor: isDark ? const Color(0xFF0A1A2F) : const Color(0xFFF0F2F5),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Settings', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text('Settings', style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: textColor),
       ),
       body: Stack(
         children: [
           // Background Gradient
           Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFF0A1A2F), Color(0xFF1C2C54), Color(0xFF0A1A2F)],
+                colors: isDark 
+                    ? [const Color(0xFF0A1A2F), const Color(0xFF1C2C54), const Color(0xFF0A1A2F)]
+                    : [const Color(0xFFF0F2F5), const Color(0xFFFFFFFF), const Color(0xFFF0F2F5)],
               ),
             ),
           ),
@@ -82,10 +91,10 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
               height: 300,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF0A84FF).withOpacity(0.1),
+                color: const Color(0xFF0A84FF).withValues(alpha: 0.1),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF0A84FF).withOpacity(0.2),
+                    color: const Color(0xFF0A84FF).withValues(alpha: 0.2),
                     blurRadius: 100,
                     spreadRadius: 20,
                   ),
@@ -101,10 +110,10 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
               height: 250,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF7D2AE8).withOpacity(0.1),
+                color: const Color(0xFF7D2AE8).withValues(alpha: 0.1),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF7D2AE8).withOpacity(0.2),
+                    color: const Color(0xFF7D2AE8).withValues(alpha: 0.2),
                     blurRadius: 100,
                     spreadRadius: 20,
                   ),
@@ -118,7 +127,7 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
             stream: FirebaseAuth.instance.userChanges(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator(color: Colors.white));
+                return Center(child: CircularProgressIndicator(color: textColor));
               }
 
               final User? currentUser = snapshot.data;
@@ -133,17 +142,22 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
                       child: Column(
                         children: [
                           // Profile Section
-                          _buildProfileSection(currentUser),
+                          _buildProfileSection(currentUser, isDark, textColor, secondaryTextColor, containerColor, borderColor),
                           
                           const SizedBox(height: 24),
                           
                           // Settings Groups
                           _buildSettingsGroup(
                             title: "General",
+                            textColor: secondaryTextColor,
+                            containerColor: containerColor,
+                            borderColor: borderColor,
                             children: [
                               _buildSettingsTile(
                                 icon: Icons.notifications_outlined,
                                 title: "Notifications",
+                                textColor: textColor,
+                                iconBgColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05),
                                 trailing: Switch(
                                   value: _notificationsEnabled,
                                   onChanged: (val) => setState(() => _notificationsEnabled = val),
@@ -153,16 +167,22 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
                               _buildSettingsTile(
                                 icon: Icons.dark_mode_outlined,
                                 title: "Dark Mode",
+                                textColor: textColor,
+                                iconBgColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05),
                                 trailing: Switch(
-                                  value: _darkMode,
-                                  onChanged: (val) => setState(() => _darkMode = val),
+                                  value: isDark,
+                                  onChanged: (val) {
+                                    themeController.toggleTheme(val);
+                                  },
                                   activeColor: const Color(0xFF0A84FF),
-                                ),
+                                )
                               ),
                               _buildSettingsTile(
                                 icon: Icons.language,
                                 title: "Language",
-                                trailing: const Text("English", style: TextStyle(color: Colors.white54)),
+                                textColor: textColor,
+                                iconBgColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05),
+                                trailing: Text("English", style: TextStyle(color: secondaryTextColor)),
                                 onTap: () {},
                               ),
                             ],
@@ -172,20 +192,29 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
                           
                           _buildSettingsGroup(
                             title: "Support & About",
+                            textColor: secondaryTextColor,
+                            containerColor: containerColor,
+                            borderColor: borderColor,
                             children: [
                               _buildSettingsTile(
                                 icon: Icons.help_outline,
                                 title: "Help & Support",
+                                textColor: textColor,
+                                iconBgColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05),
                                 onTap: () {},
                               ),
                               _buildSettingsTile(
                                 icon: Icons.info_outline,
                                 title: "About SkyAware",
+                                textColor: textColor,
+                                iconBgColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05),
                                 onTap: () {},
                               ),
                               _buildSettingsTile(
                                 icon: Icons.privacy_tip_outlined,
                                 title: "Privacy Policy",
+                                textColor: textColor,
+                                iconBgColor: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05),
                                 onTap: () {},
                               ),
                             ],
@@ -198,16 +227,16 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
                               width: double.infinity,
                               child: ElevatedButton.icon(
                                 onPressed: _logout,
-                                icon: const Icon(Icons.logout, color: Colors.white),
+                                icon: const Icon(Icons.logout, color: Colors.white), // Always white for logout (red button)
                                 label: const Text("Log Out"),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.redAccent.withOpacity(0.2),
+                                  backgroundColor: Colors.redAccent.withValues(alpha: 0.2),
                                   foregroundColor: Colors.redAccent,
                                   elevation: 0,
                                   padding: const EdgeInsets.symmetric(vertical: 16),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(16),
-                                    side: BorderSide(color: Colors.redAccent.withOpacity(0.5)),
+                                    side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.5)),
                                   ),
                                 ),
                               ),
@@ -216,7 +245,7 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
                           const SizedBox(height: 20),
                           Text(
                             "Version 1.0.0",
-                            style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 12),
+                            style: TextStyle(color: secondaryTextColor, fontSize: 12),
                           ),
                         ],
                       ),
@@ -231,23 +260,23 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _buildProfileSection(User? user) {
+  Widget _buildProfileSection(User? user, bool isDark, Color textColor, Color secondaryTextColor, Color containerColor, Color borderColor) {
     if (user == null) {
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
+          color: containerColor,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withOpacity(0.1)),
+          border: Border.all(color: borderColor),
         ),
         child: Column(
           children: [
-            const Icon(Icons.account_circle_outlined, size: 60, color: Colors.white54),
+            Icon(Icons.account_circle_outlined, size: 60, color: secondaryTextColor),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               "Sign in to sync your flight plans and preferences.",
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white70, fontSize: 14),
+              style: TextStyle(color: secondaryTextColor, fontSize: 14),
             ),
             const SizedBox(height: 20),
             SizedBox(
@@ -275,9 +304,9 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
+        color: containerColor,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         children: [
@@ -288,7 +317,7 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
             ),
             child: CircleAvatar(
               radius: 35,
-              backgroundColor: Colors.white.withOpacity(0.1),
+              backgroundColor: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.1),
               backgroundImage: (user.photoURL != null && user.photoURL!.isNotEmpty)
                   ? NetworkImage(user.photoURL!)
                   : null,
@@ -297,7 +326,7 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
                       user.displayName?.isNotEmpty == true
                           ? user.displayName![0].toUpperCase()
                           : "U",
-                      style: const TextStyle(fontSize: 28, color: Colors.white),
+                      style: TextStyle(fontSize: 28, color: textColor),
                     )
                   : null,
             ),
@@ -309,8 +338,8 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
               children: [
                 Text(
                   user.displayName ?? "Pilot",
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: textColor,
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
@@ -320,7 +349,7 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
                 Text(
                   user.email ?? "",
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
+                    color: secondaryTextColor,
                     fontSize: 14,
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -334,10 +363,10 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
                     children: [
                       Text(
                         "Edit Profile",
-                        style: TextStyle(color: const Color(0xFF0A84FF).withOpacity(0.9), fontSize: 13, fontWeight: FontWeight.w600),
+                        style: TextStyle(color: const Color(0xFF0A84FF).withValues(alpha: 0.9), fontSize: 13, fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(width: 4),
-                      Icon(Icons.arrow_forward_ios, size: 10, color: const Color(0xFF0A84FF).withOpacity(0.9)),
+                      Icon(Icons.arrow_forward_ios, size: 10, color: const Color(0xFF0A84FF).withValues(alpha: 0.9)),
                     ],
                   ),
                 ),
@@ -349,7 +378,13 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _buildSettingsGroup({required String title, required List<Widget> children}) {
+  Widget _buildSettingsGroup({
+    required String title,
+    required List<Widget> children,
+    required Color textColor,
+    required Color containerColor,
+    required Color borderColor,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -358,7 +393,7 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
           child: Text(
             title,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.6),
+              color: textColor,
               fontSize: 14,
               fontWeight: FontWeight.bold,
               letterSpacing: 0.5,
@@ -367,9 +402,9 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
         ),
         Container(
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: containerColor,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(0.05)),
+            border: Border.all(color: borderColor),
           ),
           child: Column(
             children: children,
@@ -382,6 +417,8 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
   Widget _buildSettingsTile({
     required IconData icon,
     required String title,
+    required Color textColor,
+    required Color iconBgColor,
     Widget? trailing,
     VoidCallback? onTap,
   }) {
@@ -397,22 +434,22 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.05),
+                  color: iconBgColor,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, color: Colors.white, size: 20),
+                child: Icon(icon, color: textColor, size: 20),
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  style: TextStyle(color: textColor, fontSize: 16),
                 ),
               ),
               if (trailing != null)
                 trailing
               else
-                Icon(Icons.arrow_forward_ios, color: Colors.white.withOpacity(0.3), size: 14),
+                Icon(Icons.arrow_forward_ios, color: textColor.withValues(alpha: 0.3), size: 14),
             ],
           ),
         ),

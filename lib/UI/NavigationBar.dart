@@ -2,9 +2,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:skyaware/Screens/Weather/WeatherPage.dart';
-import '../Screens/HomePage/Homepage.dart';
-import '../Screens/DashBoard/DashBoard.dart';
-import '../Screens/Settings/Settings.dart';
+import '../../Screens/HomePage/Homepage.dart';
+import '../../Screens/DashBoard/DashBoard.dart';
+import '../../Screens/Settings/Settings.dart';
 
 class Navigationbar extends StatefulWidget{
   const Navigationbar({super.key});
@@ -18,13 +18,6 @@ class Navigationbar extends StatefulWidget{
 class NavigationbarState extends State<Navigationbar>{
   int currentIndex = 0;
 
-  final List<Widget> _pages = [
-    const HomePage(),
-    const DashBoard(),
-    const WeatherPage(),
-    const Settings(),
-  ];
-
   void onTabTapped(int index) {
     setState(() {
       currentIndex = index;
@@ -34,11 +27,19 @@ class NavigationbarState extends State<Navigationbar>{
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild pages on every build to propagate theme changes to Settings
+    final List<Widget> pages = [
+      const HomePage(),
+      const DashBoard(),
+      const WeatherPage(),
+      const Settings(),
+    ];
+
     return Scaffold(
       extendBody: true,
       body: IndexedStack(
         index: currentIndex,
-        children: _pages,
+        children: pages,
       ),
       bottomNavigationBar: _buildGlassNavigationBar(),
     );
@@ -53,7 +54,7 @@ class NavigationbarState extends State<Navigationbar>{
         color: Colors.transparent, // Container itself is transparent
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 30,
             spreadRadius: -5,
             offset: const Offset(0, 10),
@@ -74,10 +75,10 @@ class NavigationbarState extends State<Navigationbar>{
             Container(
               decoration: BoxDecoration(
                 // Use a very dark, low opacity tint to allow background to shine through but stay legible
-                color: const Color(0xFF0A1A2F).withOpacity(0.4), 
+                color: const Color(0xFF0A1A2F).withValues(alpha: 0.4), 
                 borderRadius: BorderRadius.circular(40),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.15),
+                  color: Colors.white.withValues(alpha: 0.15),
                   width: 1.0,
                 ),
               ),
@@ -110,7 +111,7 @@ class NavigationbarState extends State<Navigationbar>{
         curve: Curves.easeOutCubic,
         padding: EdgeInsets.symmetric(horizontal: isSelected ? 20 : 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white.withOpacity(0.15) : Colors.transparent,
+          color: isSelected ? Colors.white.withValues(alpha: 0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Column(
@@ -121,7 +122,7 @@ class NavigationbarState extends State<Navigationbar>{
               duration: const Duration(milliseconds: 200),
               child: Icon(
                 icon,
-                color: isSelected ? Colors.white : Colors.white.withOpacity(0.5),
+                color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.5),
                 size: 24,
               ),
             ),

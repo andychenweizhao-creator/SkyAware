@@ -8,9 +8,11 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:provider/provider.dart';
+import 'package:skyaware/UI/theme_controller.dart';
 import 'Maps/maps.dart';
 import 'WeatherFeature.dart';
-import '../services/terrain_service.dart';
+import '../../services/terrain_service.dart';
 import 'CollapsibleLayerMenu.dart';
 
 class HazardInfo {
@@ -831,8 +833,15 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
+    final themeController = Provider.of<ThemeController>(context);
+    final isDark = themeController.isDarkMode;
+
+    final String tileUrl = isDark 
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
+        : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: isDark ? Colors.black : const Color(0xFFF0F2F5),
       body: Stack(
         children: [
           FlutterMap(
@@ -857,7 +866,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
             ),
             children: [
               TileLayer(
-                urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+                urlTemplate: tileUrl,
                 subdomains: const ['a', 'b', 'c'],
                 userAgentPackageName: 'com.andy.skyaware',
               ),

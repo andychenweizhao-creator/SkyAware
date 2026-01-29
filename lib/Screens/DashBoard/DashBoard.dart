@@ -15,7 +15,7 @@ import 'package:xml/xml.dart';
 import 'InFlightView.dart';
 import 'Maps/maps.dart';
 import 'WeatherFeature.dart';
-import '../services/terrain_service.dart';
+import '../../services/terrain_service.dart';
 import 'CollapsibleLayerMenu.dart';
 
 

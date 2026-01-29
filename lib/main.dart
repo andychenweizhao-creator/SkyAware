@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
-import 'NavigationBar.dart';
+import 'package:provider/provider.dart';
+import 'UI/NavigationBar.dart';
 import 'dart:io';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
+import 'UI/theme_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,7 +16,12 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(const MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ThemeController(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -22,9 +29,32 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeController = Provider.of<ThemeController>(context);
+
     return MaterialApp(
       title: 'SkyAware',
       theme: ThemeData(
+        brightness: Brightness.light,
+        scaffoldBackgroundColor: const Color(0xFFF0F2F5),
+        primaryColor: const Color(0xFF0A84FF),
+        colorScheme: const ColorScheme.light(
+          primary: Color(0xFF0A84FF),
+          secondary: Color(0xFF7D2AE8),
+          surface: Colors.white,
+          background: Color(0xFFF0F2F5),
+          onBackground: Color(0xFF0A1A2F),
+          onSurface: Color(0xFF0A1A2F),
+        ),
+        useMaterial3: true,
+        fontFamily: 'Roboto',
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: CinematicPageTransitionsBuilder(),
+            TargetPlatform.iOS: CinematicPageTransitionsBuilder(),
+          },
+        ),
+      ),
+      darkTheme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF0A1A2F),
         primaryColor: const Color(0xFF0A84FF),
@@ -33,9 +63,11 @@ class MyApp extends StatelessWidget {
           secondary: Color(0xFF7D2AE8),
           surface: Color(0xFF1C2C54),
           background: Color(0xFF0A1A2F),
+          onBackground: Colors.white,
+          onSurface: Colors.white,
         ),
         useMaterial3: true,
-        fontFamily: 'Roboto', 
+        fontFamily: 'Roboto',
         pageTransitionsTheme: const PageTransitionsTheme(
           builders: {
             TargetPlatform.android: CinematicPageTransitionsBuilder(),
@@ -43,6 +75,7 @@ class MyApp extends StatelessWidget {
           },
         ),
       ),
+      themeMode: themeController.themeMode,
       debugShowCheckedModeBanner: false,
       home: const Navigationbar(),
     );

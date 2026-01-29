@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../services/AltitudeWeatherService.dart';
+import '../../services/AltitudeWeatherService.dart';
 import '../../UI/AppAnimations.dart';
 import '../../UI/WeatherColors.dart';
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:provider/provider.dart';
+import 'package:skyaware/UI/theme_controller.dart';
 
 // Consolidated RoutePoint class
 class RoutePoint {
@@ -33,6 +35,13 @@ class Maps extends StatefulWidget {
 class _MapsState extends State<Maps> {
   @override
   Widget build(BuildContext context) {
+    final themeController = Provider.of<ThemeController>(context);
+    final isDark = themeController.isDarkMode;
+
+    final String tileUrl = isDark 
+        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
+        : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+
     List<Marker> buildRoutePointMarkers() {
       return widget.routePoints.map((routePoint) {
         IconData iconData;
@@ -100,7 +109,7 @@ class _MapsState extends State<Maps> {
       ),
       children: [
         TileLayer(
-          urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+          urlTemplate: tileUrl,
           subdomains: const ['a', 'b', 'c'],
           userAgentPackageName: 'com.andy.skyaware',
         ),
