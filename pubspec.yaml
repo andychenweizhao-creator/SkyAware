@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.9.2
+  sdk: ^3.0.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -36,37 +36,40 @@ dependencies:
   cupertino_icons: ^1.0.8
   percent_indicator: ^4.2.2
   http: ^1.2.0
-  geolocator: ^12.0.0
-  geocoding: ^3.0.0
+  geolocator: ^14.0.2
+  geocoding: ^4.0.0
   file_picker: ^10.3.6
   xml: ^6.5.0
-  flutter_map: ^6.1.0
+  flutter_map: ^8.2.2
   latlong2: ^0.9.0
   webview_flutter: ^4.7.0
   google_generative_ai: ^0.4.0
 
-  firebase_core: ^3.6.0
-  firebase_auth: ^5.3.0
-  cloud_firestore: ^5.4.0
-  firebase_storage: ^12.3.0
+  firebase_core: ^4.4.0
+  firebase_auth: ^6.1.4
+  cloud_firestore: ^6.1.2
+  firebase_storage: ^13.0.6
   image_picker: ^1.1.2
-  local_auth: ^2.1.8
-  flutter_secure_storage: ^9.0.0
+  local_auth: ^3.0.0
+  flutter_secure_storage: ^10.0.0
   image: ^4.0.0
 
   provider: ^6.1.1
   shared_preferences: ^2.2.2
 
-  google_sign_in: ^6.2.1
-  sign_in_with_apple: ^6.1.0  # 或者更高版本
+  google_sign_in: ^6.2.2
+  sign_in_with_apple: ^7.0.1
   font_awesome_flutter: ^10.6.0
+  sunrise_sunset_calc: ^3.0.0
+  
+  crypto: ^3.0.0
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -88,8 +91,8 @@ flutter:
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 
-  # For details regarding adding assets from package dependencies, see
-  # https://flutter.dev/to/asset-from-package
+  # For details regarding fonts from package dependencies, see
+  # https://flutter.dev/to/font-from-package
 
   # To add custom fonts to your application, add a fonts section here,
   # in this "flutter" section. Each entry in this list should have a

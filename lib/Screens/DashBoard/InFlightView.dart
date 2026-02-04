@@ -50,6 +50,8 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   double? _currentAltitudeFeet;
   bool _showFullData = false;
 
+  final TextEditingController _altitudeController = TextEditingController();
+
   // Terrain Awareness
   final TerrainService _terrainService = TerrainService();
   bool _showTerrainAnalysis = false;
@@ -82,6 +84,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     _positionStream?.cancel();
     _flashController?.dispose();
     _mapDebounce?.cancel();
+    _altitudeController.dispose();
     super.dispose();
   }
 
@@ -118,6 +121,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
         setState(() {
           _currentPosition = position;
           _currentAltitudeFeet = position.altitude * 3.28084; // Convert meters to feet
+          _altitudeController.text = _currentAltitudeFeet!.toStringAsFixed(0);
         });
         
         // Auto-center map on plane
@@ -471,7 +475,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
       if (points.length >= 3) {
         if (points.first != points.last) points.add(points.first);
         final polygon = Polygon(
-            points: points, color: fill, borderColor: border, borderStrokeWidth: 2.0, isFilled: true);
+            points: points, color: fill, borderColor: border, borderStrokeWidth: 2.0);
         list.add(WeatherFeature(polygon: polygon, rawProperties: props));
       }
     }
@@ -1019,6 +1023,19 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
             showFullData: _showFullData,
             onToggleFullData: (val) => setState(() => _showFullData = val),
             topPosition: 160.0,
+            altitudeController: _altitudeController,
+            altitude: _currentAltitudeFeet?.toInt(),
+            onAltitudeChanged: (val) {
+              // No-op for InFlightView as it is GPS driven
+            },
+            onReset: () {
+              setState(() {
+                _activeLayers.clear();
+                _showTerrainAnalysis = false;
+                _activeHazards = [];
+                _showFullData = false;
+              });
+            },
           ),
           
           // 5. Zoom Controls (Bottom Right)

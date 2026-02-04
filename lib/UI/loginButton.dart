@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 class loginButton extends StatelessWidget {
@@ -8,9 +7,6 @@ class loginButton extends StatelessWidget {
   final Color backgroundColor;
   final Color textColor;
   final VoidCallback? onPressed;
-  final Future<User?>  signingIn;
-
-
 
   const loginButton({
     super.key,
@@ -20,7 +16,6 @@ class loginButton extends StatelessWidget {
     this.backgroundColor = Colors.white,
     this.textColor = Colors.black,
     this.onPressed,
-    required this.signingIn,
   });
 
   @override

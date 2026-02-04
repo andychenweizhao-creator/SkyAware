@@ -3,10 +3,11 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_generative_ai/google_generative_ai.dart';
 import '../../UI/AppAnimations.dart';
+import '../../services/unit_settings_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -34,7 +35,7 @@ class _HomePageState extends State<HomePage> {
   int _aiRequestId = 0; // To handle out-of-order responses
 
   // API Key for Gemini
-  final String _apiKey = "AIzaSyBMO9xldoTR76KPYp6IKKTlUj-rThkCi84";
+  final String _apiKey = "AIzaSyAfrGuW4Lh3nBrZMRlSKoC5SWns0Phxlzk";
 
   static const Duration _geminiTimeout = Duration(seconds: 25);
   static const Duration _geminiRetryDelay = Duration(milliseconds: 600);
@@ -270,30 +271,29 @@ class _HomePageState extends State<HomePage> {
     return {'sunrise': sunrise, 'sunset': sunset};
   }
 
-  Color _getScoreColor(int score) {
-    if (score >= 90) return Colors.greenAccent;
-    if (score >= 75) return Colors.lightGreenAccent;
-    if (score >= 60) return Colors.yellowAccent;
-    if (score >= 40) return Colors.orangeAccent;
-    return Colors.redAccent;
-  }
-
-  Map<String, dynamic> _getFallbackSafetyScore() {
-    if (_metarData == null) return {'score': 0, 'color': Colors.grey};
-    final cat = _metarData!['fltcat'] ?? 'VFR';
-    switch (cat) {
-      case 'VFR': return {'score': 95, 'color': Colors.greenAccent};
-      case 'MVFR': return {'score': 75, 'color': Colors.yellowAccent};
-      case 'IFR': return {'score': 50, 'color': Colors.orangeAccent};
-      case 'LIFR': return {'score': 30, 'color': Colors.redAccent};
-      default: return {'score': 0, 'color': Colors.grey};
+  Color _getScoreColor(int score, bool isDark) {
+    if (isDark) {
+      if (score >= 90) return Colors.greenAccent;
+      if (score >= 75) return Colors.lightGreenAccent;
+      if (score >= 60) return Colors.yellowAccent;
+      if (score >= 40) return Colors.orangeAccent;
+      return Colors.redAccent;
+    } else {
+      if (score >= 90) return Colors.green;
+      if (score >= 75) return Colors.lightGreen;
+      if (score >= 60) return Colors.amber;
+      if (score >= 40) return Colors.deepOrange;
+      return Colors.red;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1A2F),
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: Stack(
         children: [
           // Background Glow
@@ -305,10 +305,10 @@ class _HomePageState extends State<HomePage> {
               height: 300,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF0A84FF).withOpacity(0.15),
+                color: theme.primaryColor.withOpacity(0.15),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF0A84FF).withOpacity(0.2),
+                    color: theme.primaryColor.withOpacity(0.2),
                     blurRadius: 100.0,
                     spreadRadius: 20,
                   ),
@@ -328,10 +328,10 @@ class _HomePageState extends State<HomePage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Header
-                        _buildHeader(),
+                        _buildHeader(theme),
                         const SizedBox(height: 20),
                         // Search Bar
-                        _buildAirportBar(),
+                        _buildAirportBar(theme, isDark),
                       ],
                     ),
                   ),
@@ -340,15 +340,15 @@ class _HomePageState extends State<HomePage> {
                 // Content Area
                 Expanded(
                   child: _isLoading
-                      ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                      ? Center(child: CircularProgressIndicator(color: theme.colorScheme.onSurface))
                       : !_hasSearched
-                          ? _buildColdStartPlaceholder()
+                          ? _buildColdStartPlaceholder(theme)
                           : _errorMessage.isNotEmpty
                               ? Center(child: Text(_errorMessage, style: const TextStyle(color: Colors.redAccent, fontSize: 16)))
                               : RefreshIndicator(
                                   onRefresh: _fetchMetarData,
-                                  color: Colors.white,
-                                  backgroundColor: const Color(0xFF0A1A2F),
+                                  color: theme.colorScheme.onSurface,
+                                  backgroundColor: theme.scaffoldBackgroundColor,
                                   child: SingleChildScrollView(
                                     padding: const EdgeInsets.symmetric(horizontal: 20),
                                     physics: const BouncingScrollPhysics(),
@@ -356,23 +356,23 @@ class _HomePageState extends State<HomePage> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         // 1. Sun Phase
-                                        StaggeredEntrance(index: 1, child: _buildSunPhaseWidget()),
+                                        StaggeredEntrance(index: 1, child: _buildSunPhaseWidget(theme)),
                                         const SizedBox(height: 32),
 
                                         // 2. Safety Gauge
-                                        StaggeredEntrance(index: 2, child: Center(child: _buildSafetyGauge())),
+                                        StaggeredEntrance(index: 2, child: Center(child: _buildSafetyGauge(theme, isDark))),
                                         const SizedBox(height: 32),
 
                                         // 3. Metrics Grid
-                                        StaggeredEntrance(index: 3, child: _buildMetricsGrid()),
+                                        StaggeredEntrance(index: 3, child: _buildMetricsGrid(theme, isDark)),
                                         const SizedBox(height: 24),
 
                                         // 4. Runway
-                                        StaggeredEntrance(index: 4, child: _buildRunwayWidget()),
+                                        StaggeredEntrance(index: 4, child: _buildRunwayWidget(theme, isDark)),
                                         const SizedBox(height: 24),
 
                                         // 5. AI Insight
-                                        StaggeredEntrance(index: 5, child: _buildAiInsightCard()),
+                                        StaggeredEntrance(index: 5, child: _buildAiInsightCard(theme)),
                                         const SizedBox(height: 80),
                                       ],
                                     ),
@@ -387,7 +387,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(ThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -395,41 +395,42 @@ class _HomePageState extends State<HomePage> {
           "Good Morning, Captain",
           style: TextStyle(
             fontSize: 16,
-            color: Colors.white.withOpacity(0.7),
+            color: theme.colorScheme.onSurface.withOpacity(0.7),
             fontWeight: FontWeight.w500,
           ),
         ),
         const SizedBox(height: 4),
-        const Text(
+        Text(
           "Ready for departure?",
           style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.bold,
-            color: Colors.white,
+            color: theme.colorScheme.onSurface,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildAirportBar() {
+  Widget _buildAirportBar(ThemeData theme, bool isDark) {
     return SpringButton(
       child: _buildGlassCard(
+        isDark: isDark,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         child: TextField(
           controller: _searchController,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: theme.colorScheme.onSurface,
             fontWeight: FontWeight.bold,
             fontSize: 18,
           ),
-          cursorColor: Colors.greenAccent,
-          decoration: const InputDecoration(
+          cursorColor: isDark ? Colors.greenAccent : Colors.green,
+          decoration: InputDecoration(
             border: InputBorder.none,
             hintText: "Enter ICAO (e.g. KSFO)",
-            hintStyle: TextStyle(color: Colors.white38),
-            icon: Icon(Icons.location_on, color: Colors.greenAccent),
-            suffixIcon: Icon(Icons.search, color: Colors.white),
+            hintStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.38)),
+            icon: Icon(Icons.location_on, color: isDark ? Colors.greenAccent : Colors.green),
+            suffixIcon: Icon(Icons.search, color: theme.colorScheme.onSurface),
           ),
           textCapitalization: TextCapitalization.characters,
           onSubmitted: (value) {
@@ -445,19 +446,19 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildColdStartPlaceholder() {
+  Widget _buildColdStartPlaceholder(ThemeData theme) {
     return StaggeredEntrance(
       index: 1,
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search_rounded, size: 80, color: Colors.white.withOpacity(0.2)),
+            Icon(Icons.search_rounded, size: 80, color: theme.colorScheme.onSurface.withOpacity(0.2)),
             const SizedBox(height: 16),
             Text(
               "Enter ICAO code to view intelligence",
               style: TextStyle(
-                color: Colors.white.withOpacity(0.5),
+                color: theme.colorScheme.onSurface.withOpacity(0.5),
                 fontSize: 16,
               ),
             ),
@@ -467,7 +468,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildSunPhaseWidget() {
+  Widget _buildSunPhaseWidget(ThemeData theme) {
     if (_lat == null || _lon == null) return const SizedBox.shrink();
 
     final sunTimes = _calculateSunTimes(_lat!, _lon!);
@@ -503,15 +504,16 @@ class _HomePageState extends State<HomePage> {
     // Animate Expansion
     return SpringButton(
       child: _buildGlassCard(
+        isDark: theme.brightness == Brightness.dark,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Column(
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("Sunrise ${formatTime(sunrise)}", style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                Text(timeText, style: const TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                Text("Sunset ${formatTime(sunset)}", style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                Text("Sunrise ${formatTime(sunrise)}", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.54), fontSize: 12)),
+                Text(timeText, style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                Text("Sunset ${formatTime(sunset)}", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.54), fontSize: 12)),
               ],
             ),
             const SizedBox(height: 12),
@@ -522,7 +524,7 @@ class _HomePageState extends State<HomePage> {
                   height: 4,
                   width: double.infinity,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
+                    color: theme.colorScheme.onSurface.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -576,93 +578,132 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildSafetyGauge() {
-    int score;
-    Color color;
-
-    if (_aiSafetyScore != null) {
-      score = _aiSafetyScore!;
-      color = _getScoreColor(score);
-    } else {
-      final fallback = _getFallbackSafetyScore();
-      score = fallback['score'] as int;
-      color = fallback['color'] as Color;
-    }
-
+  Widget _buildSafetyGauge(ThemeData theme, bool isDark) {
     return SpringButton(
       child: SizedBox(
         width: 200,
         height: 200,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            SizedBox(
-              width: 200,
-              height: 200,
-              child: CircularProgressIndicator(
-                value: 1.0,
-                strokeWidth: 15,
-                color: Colors.white.withOpacity(0.05),
-                strokeCap: StrokeCap.round,
-              ),
-            ),
-            SizedBox(
-              width: 200,
-              height: 200,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween<double>(begin: 0, end: score / 100.0),
-                duration: const Duration(seconds: 2),
-                curve: Curves.easeOutExpo,
-                builder: (context, value, child) {
-                  return CircularProgressIndicator(
-                    value: value,
-                    strokeWidth: 15,
-                    color: color,
-                    backgroundColor: Colors.transparent,
-                    strokeCap: StrokeCap.round,
-                  );
-                },
-              ),
-            ),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedCounter(
-                  value: score, 
-                  style: const TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    height: 1.0,
-                  )
-                ),
-                Text(
-                  _aiSafetyScore != null ? "AI SAFETY SCORE" : "EST. SCORE",
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: color.withOpacity(0.9),
-                    letterSpacing: 1.0,
-                  ),
-                ),
-              ],
-            ),
-          ],
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 800),
+          switchInCurve: Curves.easeOutBack,
+          switchOutCurve: Curves.easeIn,
+          child: _aiSafetyScore != null
+              ? _buildScoreGauge(_aiSafetyScore!, theme, isDark)
+              : _buildAnalyzingState(theme),
         ),
       ),
     );
   }
 
-  Widget _buildMetricsGrid() {
+  Widget _buildAnalyzingState(ThemeData theme) {
+    return Container(
+      key: const ValueKey("analyzing"),
+      width: 200,
+      height: 200,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: theme.colorScheme.surface.withOpacity(0.05),
+        border: Border.all(color: theme.colorScheme.onSurface.withOpacity(0.1)),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: CircularProgressIndicator(
+              color: theme.primaryColor,
+              strokeWidth: 3,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            "Analyzing\nAI Safety Score...",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: theme.primaryColor.withOpacity(0.8),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoreGauge(int score, ThemeData theme, bool isDark) {
+    final color = _getScoreColor(score, isDark);
+    return Stack(
+      key: const ValueKey("score"),
+      alignment: Alignment.center,
+      children: [
+        SizedBox(
+          width: 200,
+          height: 200,
+          child: CircularProgressIndicator(
+            value: 1.0,
+            strokeWidth: 15,
+            color: theme.colorScheme.onSurface.withOpacity(0.05),
+            strokeCap: StrokeCap.round,
+          ),
+        ),
+        SizedBox(
+          width: 200,
+          height: 200,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: score / 100.0),
+            duration: const Duration(seconds: 2),
+            curve: Curves.easeOutExpo,
+            builder: (context, value, child) {
+              return CircularProgressIndicator(
+                value: value,
+                strokeWidth: 15,
+                color: color,
+                backgroundColor: Colors.transparent,
+                strokeCap: StrokeCap.round,
+              );
+            },
+          ),
+        ),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedCounter(
+              value: score,
+              style: TextStyle(
+                fontSize: 48,
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurface,
+                height: 1.0,
+              )
+            ),
+            Text(
+              "AI SAFETY SCORE",
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: color.withOpacity(0.9),
+                letterSpacing: 1.0,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMetricsGrid(ThemeData theme, bool isDark) {
     if (_metarData == null) return const SizedBox.shrink();
+    final units = Provider.of<UnitSettingsProvider>(context);
 
     // 1. Flight Category
     final fltcat = _metarData!['fltcat']?.toString() ?? 'N/A';
-    Color catColor = Colors.white;
+    Color catColor = theme.colorScheme.onSurface;
     switch (fltcat) {
-      case 'VFR': catColor = Colors.greenAccent; break;
+      case 'VFR': catColor = isDark ? Colors.greenAccent : Colors.green; break;
       case 'MVFR': catColor = Colors.blueAccent; break;
-      case 'IFR': catColor = Colors.redAccent; break;
+      case 'IFR': catColor = isDark ? Colors.redAccent : Colors.red; break;
       case 'LIFR': catColor = Colors.purpleAccent; break;
       default: catColor = Colors.grey;
     }
@@ -671,17 +712,33 @@ class _HomePageState extends State<HomePage> {
     final altimMb = _metarData!['altim'];
     String altimDisplay = "29.92 inHg";
     if (altimMb is num) {
-      altimDisplay = "${(altimMb * 0.02953).toStringAsFixed(2)} inHg";
+      if (units.pressureUnit == PressureUnit.inHg) {
+        altimDisplay = "${(altimMb * 0.02953).toStringAsFixed(2)} inHg";
+      } else {
+        altimDisplay = "${altimMb.round()} hPa";
+      }
     }
 
     // 3. Temp / Dewp
     final temp = _metarData!['temp']?.toString() ?? '0';
     final dewp = _metarData!['dewp']?.toString() ?? '0';
-    Color tempColor = Colors.white;
+    Color tempColor = theme.colorScheme.onSurface;
+    String tempDisplay = "$temp°C / $dewp°C";
+    
     try {
-      final t = double.parse(temp);
-      final d = double.parse(dewp);
+      double t = double.parse(temp);
+      double d = double.parse(dewp);
+      
+      // Determine color based on spread in Celsius
       if ((t - d).abs() < 3) tempColor = Colors.orangeAccent;
+
+      if (units.temperatureUnit == TemperatureUnit.fahrenheit) {
+        t = (t * 9 / 5) + 32;
+        d = (d * 9 / 5) + 32;
+        tempDisplay = "${t.round()}°F / ${d.round()}°F";
+      } else {
+        tempDisplay = "${t.round()}°C / ${d.round()}°C";
+      }
     } catch (_) {}
 
     // 4. Wind
@@ -689,25 +746,74 @@ class _HomePageState extends State<HomePage> {
     dynamic rawSpd = _metarData!['wspd'];
     String windDirDisplay = rawDir is num ? "${rawDir.toString().padLeft(3, '0')}°" : "VRB";
     String windSpdDisplay = rawSpd?.toString() ?? "0";
-    final windDisplay = "$windDirDisplay @ ${windSpdDisplay}kt";
+    String windUnitLabel = "kt";
 
-    // 5. Sky
+    if (rawSpd is num) {
+      double speed = rawSpd.toDouble();
+      if (units.distanceSpeedUnit == DistanceSpeedUnit.kilometersKph) {
+        speed = speed * 1.852; // kt to km/h
+        windUnitLabel = "kph";
+      } else if (units.distanceSpeedUnit == DistanceSpeedUnit.milesMph) {
+        speed = speed * 1.15078; // kt to mph
+        windUnitLabel = "mph";
+      }
+      windSpdDisplay = speed.round().toString();
+    }
+    
+    final windDisplay = "$windDirDisplay @ $windSpdDisplay$windUnitLabel";
+
+    // 5. Sky (Ceiling Unit)
     String skyCond = "SKC";
     if (_metarData!.containsKey('clouds')) {
       final List<dynamic> clouds = _metarData!['clouds'] ?? [];
       if (clouds.isNotEmpty) {
         final layer = clouds[0];
-        skyCond = "${layer['cover']} ${layer['base'] ?? ''}".trim();
+        String baseStr = layer['base']?.toString() ?? '';
+        if (baseStr.isNotEmpty && units.altitudeUnit == AltitudeUnit.meters) {
+           int? feet = int.tryParse(baseStr);
+           if (feet != null) {
+             baseStr = (feet * 0.3048).round().toString();
+           }
+        }
+        skyCond = "${layer['cover']} $baseStr".trim();
       }
     } else {
        final cover = _metarData!['cover']?.toString() ?? 'SKC';
        final ceil = _metarData!['ceil'];
-       final ceilStr = ceil != null ? (ceil as num).toInt().toString() : '';
+       String ceilStr = '';
+       if (ceil != null && ceil is num) {
+          if (units.altitudeUnit == AltitudeUnit.meters) {
+            ceilStr = (ceil * 0.3048).round().toString();
+          } else {
+            ceilStr = ceil.toInt().toString();
+          }
+       }
        skyCond = "$cover $ceilStr".trim();
     }
     
     // 6. Vis / Wx
-    final vis = _metarData!['visib']?.toString() ?? '10+';
+    // Typically Aviation Weather API returns visibility in SM (Statute Miles)
+    String visDisplay = _metarData!['visib']?.toString() ?? '10+';
+    String visUnit = "SM";
+    
+    // Try to parse visibility to convert if needed
+    // Often it can be "10+" or fractions "1/2"
+    // For simplicity, we only convert simple numbers or "10+"
+    if (units.distanceSpeedUnit == DistanceSpeedUnit.kilometersKph) {
+       // Convert SM to km
+       // Very rough handling for "10+"
+       if (visDisplay == "10+") {
+         visDisplay = "16+";
+         visUnit = "km";
+       } else {
+         final v = double.tryParse(visDisplay);
+         if (v != null) {
+           visDisplay = (v * 1.60934).toStringAsFixed(1);
+           visUnit = "km";
+         }
+       }
+    }
+    
     final wx = _metarData!['wx']?.toString() ?? '';
 
     return GridView.count(
@@ -718,23 +824,27 @@ class _HomePageState extends State<HomePage> {
       physics: const NeverScrollableScrollPhysics(),
       childAspectRatio: 1.4,
       children: [
-        _buildMetricCard("FLIGHT CAT", fltcat, icon: Icons.flight, color: catColor, isPill: true),
-        _buildMetricCard("ALTIMETER", altimDisplay, icon: Icons.speed),
-        _buildMetricCard("TEMP / DEWP", "$temp°C / $dewp°C", icon: Icons.thermostat, color: tempColor),
-        _buildMetricCard("WIND", windDisplay, icon: Icons.air),
-        _buildMetricCard("SKY COND", skyCond, icon: Icons.cloud),
-        _buildMetricCard("VIS / WX", "$vis SM $wx".trim(), icon: Icons.visibility),
+        _buildMetricCard("FLIGHT CAT", fltcat, theme, isDark, icon: Icons.flight, color: catColor, isPill: true),
+        _buildMetricCard("ALTIMETER", altimDisplay, theme, isDark, icon: Icons.speed),
+        _buildMetricCard("TEMP / DEWP", tempDisplay, theme, isDark, icon: Icons.thermostat, color: tempColor),
+        _buildMetricCard("WIND", windDisplay, theme, isDark, icon: Icons.air),
+        _buildMetricCard("SKY COND", skyCond, theme, isDark, icon: Icons.cloud),
+        _buildMetricCard("VIS / WX", "$visDisplay $visUnit $wx".trim(), theme, isDark, icon: Icons.visibility),
       ],
     );
   }
 
-  Widget _buildMetricCard(String title, String value, {
+  Widget _buildMetricCard(String title, String value, ThemeData theme, bool isDark, {
     IconData? icon,
-    Color color = Colors.white,
+    Color? color,
     bool isPill = false,
   }) {
+    // Default color to onSurface if not specified
+    final contentColor = color ?? theme.colorScheme.onSurface;
+
     return SpringButton(
       child: _buildGlassCard(
+        isDark: isDark,
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -743,30 +853,31 @@ class _HomePageState extends State<HomePage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12, fontWeight: FontWeight.bold)),
-                if (icon != null) Icon(icon, color: Colors.white.withOpacity(0.4), size: 16),
+                Text(title, style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 12, fontWeight: FontWeight.bold)),
+                if (icon != null) Icon(icon, color: theme.colorScheme.onSurface.withOpacity(0.4), size: 16),
               ],
             ),
             if (isPill)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.2),
+                  color: contentColor.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: color.withOpacity(0.5)),
+                  border: Border.all(color: contentColor.withOpacity(0.5)),
                 ),
-                child: Text(value, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 18)),
+                child: Text(value, style: TextStyle(color: contentColor, fontWeight: FontWeight.bold, fontSize: 18)),
               )
             else
-              Text(value, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 20), maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(value, style: TextStyle(color: contentColor, fontWeight: FontWeight.bold, fontSize: 20), maxLines: 1, overflow: TextOverflow.ellipsis),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildRunwayWidget() {
+  Widget _buildRunwayWidget(ThemeData theme, bool isDark) {
     if (_metarData == null) return const SizedBox.shrink();
+    final units = Provider.of<UnitSettingsProvider>(context);
     
     double windDir = 0;
     double windSpd = 0;
@@ -780,6 +891,18 @@ class _HomePageState extends State<HomePage> {
     if (_metarData!['wspd'] is num) {
       windSpd = (_metarData!['wspd'] as num).toDouble();
     }
+    
+    // Convert for display in the text below
+    String windSpdDisplay = windSpd.toStringAsFixed(0);
+    String windUnitLabel = "kt";
+    
+    if (units.distanceSpeedUnit == DistanceSpeedUnit.kilometersKph) {
+      windSpdDisplay = (windSpd * 1.852).toStringAsFixed(0);
+      windUnitLabel = "kph";
+    } else if (units.distanceSpeedUnit == DistanceSpeedUnit.milesMph) {
+      windSpdDisplay = (windSpd * 1.15078).toStringAsFixed(0);
+      windUnitLabel = "mph";
+    }
 
     final runwayNum = (runwayHeading / 10).toInt();
     final runwayNumOpp = runwayNum > 18 ? runwayNum - 18 : runwayNum + 18;
@@ -787,12 +910,13 @@ class _HomePageState extends State<HomePage> {
 
     return SpringButton(
       child: _buildGlassCard(
+        isDark: isDark,
         padding: const EdgeInsets.all(20),
         child: Row(
           children: [
             Container(
               width: 80, height: 80,
-              decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), shape: BoxShape.circle),
+              decoration: BoxDecoration(color: theme.colorScheme.surface.withOpacity(isDark ? 0.05 : 0.5), shape: BoxShape.circle),
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -819,10 +943,9 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("IDEAL RUNWAY ${runwayNum.toString().padLeft(2,'0')}", style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold)),
+                  Text("IDEAL RUNWAY ${runwayNum.toString().padLeft(2,'0')}", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.54), fontSize: 10, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  // We simplified this for brevity as logic was preserved
-                  Text("Wind ${windDir.toStringAsFixed(0)}@${windSpd.toStringAsFixed(0)}kt", style: const TextStyle(color: Colors.white, fontSize: 16)),
+                  Text("Wind ${windDir.toStringAsFixed(0)}@$windSpdDisplay$windUnitLabel", style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 16)),
                 ],
               ),
             )
@@ -832,9 +955,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildAiInsightCard() {
+  Widget _buildAiInsightCard(ThemeData theme) {
     return SpringButton(
       child: _buildGlassCard(
+        isDark: theme.brightness == Brightness.dark,
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -843,18 +967,18 @@ class _HomePageState extends State<HomePage> {
               children: [
                 const Icon(Icons.auto_awesome, color: Colors.purpleAccent, size: 20),
                 const SizedBox(width: 12),
-                const Text("Co-Pilot Insight", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                Text("Co-Pilot Insight", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
               ],
             ),
             const SizedBox(height: 12),
-            Text(_aiInsight, style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.8), height: 1.5)),
+            Text(_aiInsight, style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface.withOpacity(0.8), height: 1.5)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildGlassCard({required Widget child, EdgeInsets padding = EdgeInsets.zero}) {
+  Widget _buildGlassCard({required Widget child, EdgeInsets padding = EdgeInsets.zero, required bool isDark}) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
@@ -862,10 +986,15 @@ class _HomePageState extends State<HomePage> {
         child: Container(
           padding: padding,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: isDark ? Colors.white.withOpacity(0.05) : Colors.white.withOpacity(0.8),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.1), width: 1),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)],
+            border: Border.all(color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: isDark ? Colors.black.withOpacity(0.1) : Colors.black.withOpacity(0.05), 
+                blurRadius: 10
+              )
+            ],
           ),
           child: child,
         ),

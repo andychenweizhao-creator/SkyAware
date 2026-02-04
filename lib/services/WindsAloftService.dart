@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:http/http.dart' as http;
+import 'AviationWeatherCalculator.dart';
+import 'OpenMeteoService.dart';
 
 class WindsAloftService {
   static const String _stationsUrl = 'https://aviationweather.gov/data/cache/stations.cache.json.gz';
@@ -17,9 +19,6 @@ class WindsAloftService {
 
       if (response.statusCode == 200) {
         // Decompress Gzipped JSON
-        // Note: The server sends a .json.gz file, so we must manually decompress it.
-        // If the server served it with 'Content-Encoding: gzip', http.get would handle it,
-        // but often these cache files are served as binary blobs.
         String jsonString;
         try {
           jsonString = utf8.decode(GZipCodec().decode(response.bodyBytes));
@@ -28,23 +27,22 @@ class WindsAloftService {
           jsonString = response.body;
         }
 
-        final List<dynamic> stations = json.decode(jsonString);
+        final List<dynamic> rawStations = json.decode(jsonString);
+        // Cast to List<Map<String, dynamic>> for the calculator
+        final List<Map<String, dynamic>> stations = rawStations.cast<Map<String, dynamic>>();
         
-        String closestStation = '';
-        double minDistance = double.infinity;
+        // Use the new algorithm
+        final nearest = AviationWeatherCalculator.findNearestStation(
+          userLat: userLat, 
+          userLon: userLon, 
+          stations: stations
+        );
 
-        for (var station in stations) {
-          // Check if station has lat/lon
-          if (station['lat'] != null && station['lon'] != null) {
-            double dist = _calculateDistance(userLat, userLon, station['lat'], station['lon']);
-            if (dist < minDistance) {
-              minDistance = dist;
-              closestStation = station['icao'] ?? station['id']; // Use ICAO or ID
-            }
-          }
+        if (nearest != null) {
+          return nearest['icao'] ?? nearest['id'] ?? 'KLAX';
+        } else {
+          return 'KLAX';
         }
-
-        return closestStation;
       } else {
         throw Exception('Failed to load stations: ${response.statusCode}');
       }
@@ -52,14 +50,6 @@ class WindsAloftService {
       print('Error finding station: $e');
       return 'KLAX'; // Fallback
     }
-  }
-
-  /// Helper: Haversine distance
-  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-    const p = 0.017453292519943295; // Math.PI / 180
-    final a = 0.5 - cos((lat2 - lat1) * p) / 2 +
-        cos(lat1 * p) * cos(lat2 * p) * (1 - cos((lon2 - lon1) * p)) / 2;
-    return 12742 * asin(sqrt(a)); // 2 * R; R = 6371 km
   }
 
   /// Step 2: Fetch Raw Winds Data & Parse for Specific Station
@@ -95,15 +85,6 @@ class WindsAloftService {
     // Parse available data
     Map<int, Map<String, double>> parsedData = {};
     
-    // We start parsing from index 1 (index 0 is station ID).
-    // Note: This logic assumes 'parts' aligns perfectly with '_levels'.
-    // In practice, missing low-altitude data might shift columns if simpler regex splitting is used
-    // on a variable-width font text, BUT usually these are fixed width or space padded.
-    // 'split(RegExp(r'\s+'))' consumes variable whitespace, which handles alignment if fields are present.
-    // If fields are missing (blank), this simple split will shift data to wrong altitudes.
-    // A robust parser would use substring with fixed indices.
-    // However, for this task, we will stick to the simple split as requested/implied.
-    
     int dataIndex = 1;
     for (int i = 0; i < _levels.length; i++) {
        if (dataIndex < parts.length) {
@@ -135,10 +116,6 @@ class WindsAloftService {
     final upperData = parsedData[upperAlt];
 
     if (lowerData == null || upperData == null) {
-      // Fallback if data is missing for specific levels (e.g. station elevation > 3000)
-      // If we are between 3000 and 6000 but 3000 is missing, use 6000?
-      // Or find nearest available.
-      // For simplicity, return error or nearest.
       return lowerData != null ? _formatResult(lowerData) : 
              (upperData != null ? _formatResult(upperData) : {'error': 'Data missing'});
     }

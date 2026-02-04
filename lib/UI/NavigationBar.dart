@@ -41,11 +41,26 @@ class NavigationbarState extends State<Navigationbar>{
         index: currentIndex,
         children: pages,
       ),
-      bottomNavigationBar: _buildGlassNavigationBar(),
+      bottomNavigationBar: _buildGlassNavigationBar(context),
     );
   }
 
-  Widget _buildGlassNavigationBar() {
+  Widget _buildGlassNavigationBar(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    final backgroundColor = isDark 
+        ? const Color(0xFF0A1A2F).withValues(alpha: 0.8) 
+        : Colors.white.withValues(alpha: 0.85);
+    
+    final borderColor = isDark 
+        ? Colors.white.withValues(alpha: 0.15) 
+        : Colors.black.withValues(alpha: 0.1);
+    
+    final shadowColor = isDark 
+        ? Colors.black.withValues(alpha: 0.5) 
+        : Colors.grey.withValues(alpha: 0.3);
+
     return Container(
       // Lift it off the bottom to make it floating
       margin: const EdgeInsets.fromLTRB(20, 0, 20, 30),
@@ -54,7 +69,7 @@ class NavigationbarState extends State<Navigationbar>{
         color: Colors.transparent, // Container itself is transparent
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
+            color: shadowColor,
             blurRadius: 30,
             spreadRadius: -5,
             offset: const Offset(0, 10),
@@ -74,11 +89,10 @@ class NavigationbarState extends State<Navigationbar>{
             // Layer B: The Tint (Semi-Transparent Color)
             Container(
               decoration: BoxDecoration(
-                // Use a very dark, low opacity tint to allow background to shine through but stay legible
-                color: const Color(0xFF0A1A2F).withValues(alpha: 0.4), 
+                color: backgroundColor,
                 borderRadius: BorderRadius.circular(40),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.15),
+                  color: borderColor,
                   width: 1.0,
                 ),
               ),
@@ -88,10 +102,10 @@ class NavigationbarState extends State<Navigationbar>{
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _buildNavItem(0, Icons.home_rounded, "Home"),
-                  _buildNavItem(1, Icons.dashboard_rounded, "Dashboard"),
-                  _buildNavItem(2, Icons.cloud_rounded, "Weather"),
-                  _buildNavItem(3, Icons.settings_rounded, "Settings"),
+                  _buildNavItem(0, Icons.home_rounded, "Home", isDark, theme),
+                  _buildNavItem(1, Icons.dashboard_rounded, "Dashboard", isDark, theme),
+                  _buildNavItem(2, Icons.cloud_rounded, "Weather", isDark, theme),
+                  _buildNavItem(3, Icons.settings_rounded, "Settings", isDark, theme),
                 ],
               ),
             ),
@@ -101,8 +115,20 @@ class NavigationbarState extends State<Navigationbar>{
     );
   }
 
-  Widget _buildNavItem(int index, IconData icon, String label) {
+  Widget _buildNavItem(int index, IconData icon, String label, bool isDark, ThemeData theme) {
     final isSelected = currentIndex == index;
+    
+    // Icon colors
+    final selectedIconColor = isDark ? Colors.white : theme.primaryColor;
+    final unselectedIconColor = isDark 
+        ? Colors.white.withValues(alpha: 0.5) 
+        : Colors.black.withValues(alpha: 0.5);
+
+    // Background selection color
+    final selectionBgColor = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : theme.primaryColor.withValues(alpha: 0.1);
+
     return GestureDetector(
       onTap: () => onTabTapped(index),
       behavior: HitTestBehavior.opaque,
@@ -111,7 +137,7 @@ class NavigationbarState extends State<Navigationbar>{
         curve: Curves.easeOutCubic,
         padding: EdgeInsets.symmetric(horizontal: isSelected ? 20 : 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white.withValues(alpha: 0.15) : Colors.transparent,
+          color: isSelected ? selectionBgColor : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Column(
@@ -122,7 +148,7 @@ class NavigationbarState extends State<Navigationbar>{
               duration: const Duration(milliseconds: 200),
               child: Icon(
                 icon,
-                color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.5),
+                color: isSelected ? selectedIconColor : unselectedIconColor,
                 size: 24,
               ),
             ),

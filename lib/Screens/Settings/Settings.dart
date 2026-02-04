@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:skyaware/UI/theme_controller.dart';
 import '../Login/login_page.dart';
+import 'unit_preferences_section.dart';
 
 class Settings extends StatefulWidget {
   const Settings({super.key});
@@ -144,6 +145,17 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
                           // Profile Section
                           _buildProfileSection(currentUser, isDark, textColor, secondaryTextColor, containerColor, borderColor),
                           
+                          const SizedBox(height: 24),
+
+                          // NEW: Unit Preferences Section
+                          UnitPreferencesSection(
+                            textColor: textColor,
+                            secondaryTextColor: secondaryTextColor,
+                            containerColor: containerColor,
+                            borderColor: borderColor,
+                            isDark: isDark,
+                          ),
+
                           const SizedBox(height: 24),
                           
                           // Settings Groups

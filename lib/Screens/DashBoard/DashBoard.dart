@@ -628,7 +628,7 @@ class _DashBoardState extends State<DashBoard> {
     // Define URIs based on type
     final uris = <Uri>[];
     switch (type.toLowerCase()) {
-      case 'conv': uris.add(Uri.parse('https://aviationweather.gov/api/data/airsigmet?format=geojson&types=sigmet&hazard=conv')); break;
+      case 'conv': uris.add(Uri.parse('https://aviationweather.gov/api/data/airsigmet?format=geojson&type=sigmet&hazard=conv')); break;
       case 'ice': uris.add(Uri.parse('https://aviationweather.gov/api/data/gairmet?format=geojson&hazard=ice')); break;
       case 'turb':
         uris.add(Uri.parse('https://aviationweather.gov/api/data/gairmet?product=tango&format=geojson&hazard=turb-lo&fore=3'));
@@ -656,6 +656,8 @@ class _DashBoardState extends State<DashBoard> {
               _processGeometry(feature, parsedFeatures, colors.$1, colors.$2);
             }
           }
+        } else {
+          print("Failed to fetch $uri: ${response.statusCode}");
         }
       } catch (e) {
         print("Network/Parsing Error for $uri: $e");
@@ -785,7 +787,7 @@ class _DashBoardState extends State<DashBoard> {
       if (points.length >= 3) {
         if (points.first != points.last) points.add(points.first);
         final polygon = Polygon(
-            points: points, color: fill, borderColor: border, borderStrokeWidth: 2.0, isFilled: true);
+            points: points, color: fill, borderColor: border, borderStrokeWidth: 2.0);
         list.add(WeatherFeature(polygon: polygon, rawProperties: props));
       }
     }

@@ -232,19 +232,18 @@ class AuthService {
     try {
       await _auth.sendPasswordResetEmail(email: email);
     } on FirebaseAuthException catch (e) {
-      throw Exception(_mapFirebaseErorr(e));
+      throw Exception(_mapFirebaseError(e));
     }
   }
 
-  String _mapFirebaseErorr(FirebaseAuthException e) {
+  String _mapFirebaseError(FirebaseAuthException e) {
     switch (e.code) {
       case 'user-not-found':
         return 'No user found for that email.';
-      case 'invalid email':
+      case 'invalid-email':
         return 'Please enter a valid email.';
       default:
         return 'Something went wrong. Please try again.';
     }
   }
 }
-
