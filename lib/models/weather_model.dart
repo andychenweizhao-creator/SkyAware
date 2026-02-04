@@ -1,24 +1,31 @@
 class WeatherModel {
-  final double temperature; // Celsius or Fahrenheit based on fetch
-  final double windSpeed; // KMH or MPH based on fetch
+  final double temperature; // Celsius
+  final double windSpeed; // KMH
   final double windDirection; // Degrees
-  final String? pressure; // Pre-formatted String (e.g. "1013 hPa" or "29.92 inHg")
+  final double? pressure; // hPa
   final double? humidity; // %
-  final double? dewpoint; // Celsius or Fahrenheit based on fetch
+  final double? dewpoint; // Celsius
   final String condition;
-  final String? visibility; // Pre-formatted String
+  final double? visibility; // Meters
   final String? flightCategory;
-  final String? ceiling; // Cloud Cover %
-  final double? densityAltitude; // Feet
+  
+  // Ceiling split for dynamic units
+  final double? ceilingHeight; // Meters
+  final String? ceilingType; // "Overcast", "Broken", "Below Aircraft", etc.
+  
+  final double? densityAltitude; // Meters
   final String stationId;
-  final double altitudeFt;
+  final double altitudeFt; // User's Altitude in Feet (Input)
   final bool isInterpolated;
   final double latitude;
   final double longitude;
   final String locationName;
-  final String? precip; // Pre-formatted String
+  final double? precip; // mm
   final DateTime? sunrise;
   final DateTime? sunset;
+  final String backgroundState;
+  final bool isDay;
+  final double cloudOpacity;
 
   WeatherModel({
     required this.temperature,
@@ -30,7 +37,8 @@ class WeatherModel {
     this.condition = "Unknown",
     this.visibility,
     this.flightCategory,
-    this.ceiling,
+    this.ceilingHeight,
+    this.ceilingType,
     this.densityAltitude,
     required this.stationId,
     required this.altitudeFt,
@@ -41,10 +49,13 @@ class WeatherModel {
     this.precip,
     this.sunrise,
     this.sunset,
+    this.backgroundState = "day_clear",
+    this.isDay = true,
+    this.cloudOpacity = 0.0,
   });
 
   @override
   String toString() {
-    return 'WeatherModel(station: $stationId, temp: $temperature, densityAlt: $densityAltitude)';
+    return 'WeatherModel(station: $stationId, temp: $temperature C, densityAlt: $densityAltitude m, bg: $backgroundState)';
   }
 }

@@ -6,6 +6,7 @@ import 'package:geocoding/geocoding.dart';
 import '../../repositories/weather_repository.dart';
 import '../../models/weather_model.dart';
 import '../../services/unit_settings_service.dart';
+import '../../services/AviationWeatherCalculator.dart';
 import '../../UI/AppAnimations.dart';
 import '../../UI/WeatherColors.dart';
 
@@ -23,9 +24,9 @@ class _WeatherPageState extends State<WeatherPage> {
   bool _isLoading = true;
   String _errorMessage = '';
   
-  // Track the units the data was fetched in to allow on-the-fly conversion if settings change
-  bool _fetchedAsMetric = true; 
-
+  // State for Surface Mode Toggle
+  bool _useSurfaceMode = false;
+  
   @override
   void initState() {
     super.initState();
@@ -34,6 +35,10 @@ class _WeatherPageState extends State<WeatherPage> {
 
   Future<void> _loadWeatherData() async {
     try {
+      if (mounted && _weatherData == null) {
+         setState(() => _isLoading = true);
+      }
+      
       // 1. Get Location
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
@@ -57,46 +62,17 @@ class _WeatherPageState extends State<WeatherPage> {
       );
       double altitudeFt = position.altitude * 3.28084;
 
-      // 2. Reverse Geocoding
-      String locName = "Unknown Location";
-      try {
-        List<Placemark> placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
-        if (placemarks.isNotEmpty) {
-          Placemark place = placemarks.first;
-          String name = place.name ?? "";
-          String locality = place.locality ?? "";
-          String adminArea = place.administrativeArea ?? "";
-
-          if (locality.isNotEmpty && adminArea.isNotEmpty) {
-             locName = "Near $locality, $adminArea";
-          } else if (name.isNotEmpty && locality.isNotEmpty) {
-             locName = "Near $name, $locality";
-          } else if (locality.isNotEmpty) {
-             locName = "Near $locality";
-          } else {
-             locName = "Lat: ${position.latitude.toStringAsFixed(1)}, Lon: ${position.longitude.toStringAsFixed(1)}";
-          }
-        }
-      } catch (e) {
-        debugPrint("Geocoding error: $e");
-      }
-
-      // 3. Get Weather
-      // Determine preference at time of fetch
-      final units = Provider.of<UnitSettingsProvider>(context, listen: false);
-      bool useMetric = units.temperatureUnit == TemperatureUnit.celsius;
-      
+      // 2. Get Weather (Always Metric Baseline)
       final data = await _weatherRepository.getWeather(
           position.latitude, 
           position.longitude, 
           altitudeFt, 
-          useMetric: useMetric
+          forceSurface: _useSurfaceMode, 
       );
 
       if (mounted) {
         setState(() {
           _weatherData = data;
-          _fetchedAsMetric = useMetric; // Store what we fetched
           _isLoading = false;
         });
       }
@@ -153,7 +129,9 @@ class _WeatherPageState extends State<WeatherPage> {
     String altDisplay = "--";
     if (_weatherData != null) {
       if (units.altitudeUnit == AltitudeUnit.meters) {
-        altDisplay = "${(_weatherData!.altitudeFt * 0.3048).toStringAsFixed(0)}m";
+        // Source is Feet (User Input stored in model)
+        double altMeters = AviationMath.feetToMeters(_weatherData!.altitudeFt);
+        altDisplay = "${altMeters.toStringAsFixed(0)}m";
       } else {
         altDisplay = "${_weatherData!.altitudeFt.toStringAsFixed(0)}ft";
       }
@@ -191,6 +169,32 @@ class _WeatherPageState extends State<WeatherPage> {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          // Mode Switch Row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                _useSurfaceMode ? "Surface Mode" : "Altitude Mode",
+                style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(width: 8),
+              Switch(
+                value: !_useSurfaceMode, // True if Altitude, False if Surface
+                onChanged: (val) {
+                  setState(() {
+                    _useSurfaceMode = !val;
+                    _isLoading = true; // Show loading while fetching
+                  });
+                  _loadWeatherData();
+                },
+                activeColor: Colors.blueAccent,
+                activeTrackColor: Colors.blueAccent.withOpacity(0.4),
+                inactiveThumbColor: Colors.grey,
+                inactiveTrackColor: Colors.grey.withOpacity(0.4),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -203,16 +207,10 @@ class _WeatherPageState extends State<WeatherPage> {
     String tempSuffix = "°";
     
     if (_weatherData != null) {
-      double t = _weatherData!.temperature;
-      bool targetMetric = units.temperatureUnit == TemperatureUnit.celsius;
-
-      // Conversion logic if settings changed since fetch
-      if (_fetchedAsMetric && !targetMetric) {
-        // Fetched C, Display F
-        t = (t * 9 / 5) + 32;
-      } else if (!_fetchedAsMetric && targetMetric) {
-        // Fetched F, Display C
-        t = (t - 32) * 5 / 9;
+      double t = _weatherData!.temperature; // Source Metric (C)
+      
+      if (units.temperatureUnit == TemperatureUnit.fahrenheit) {
+        t = AviationMath.celsiusToFahrenheit(t);
       }
       
       tempVal = t.round();
@@ -302,30 +300,16 @@ class _WeatherPageState extends State<WeatherPage> {
   Widget _buildDetailsGrid() {
     final units = Provider.of<UnitSettingsProvider>(context);
 
-    // Density Altitude Logic Update for Dynamic Units
+    // Density Altitude
     String densityAltDisplay = "--";
     if (_weatherData?.densityAltitude != null) {
-      double da = _weatherData!.densityAltitude!;
+      double daMeters = _weatherData!.densityAltitude!; // Source Metric (m)
       
-      // Check target unit
       if (units.altitudeUnit == AltitudeUnit.meters) {
-         // We want Meters.
-         if (_fetchedAsMetric) {
-           // Source is Meters.
-           densityAltDisplay = "${da.toStringAsFixed(0)} m";
-         } else {
-           // Source is Feet. Convert to Meters.
-           densityAltDisplay = "${(da * 0.3048).toStringAsFixed(0)} m";
-         }
+         densityAltDisplay = "${daMeters.toStringAsFixed(0)} m";
       } else {
-         // We want Feet.
-         if (_fetchedAsMetric) {
-           // Source is Meters. Convert to Feet.
-           densityAltDisplay = "${(da / 0.3048).toStringAsFixed(0)} ft";
-         } else {
-           // Source is Feet.
-           densityAltDisplay = "${da.toStringAsFixed(0)} ft";
-         }
+         double daFt = AviationMath.metersToFeet(daMeters);
+         densityAltDisplay = "${daFt.toStringAsFixed(0)} ft";
       }
     }
 
@@ -333,18 +317,12 @@ class _WeatherPageState extends State<WeatherPage> {
     String dewpointDisplay = "--";
     String spreadDisplay = "";
     if (_weatherData?.dewpoint != null && _weatherData!.dewpoint != null) {
-      double d = _weatherData!.dewpoint!;
-      double t = _weatherData!.temperature;
+      double d = _weatherData!.dewpoint!; // Source C
+      double t = _weatherData!.temperature; // Source C
       
-      bool targetMetric = units.temperatureUnit == TemperatureUnit.celsius;
-      
-      // Convert T and D if necessary to match target unit
-      if (_fetchedAsMetric && !targetMetric) {
-        d = (d * 9 / 5) + 32;
-        t = (t * 9 / 5) + 32;
-      } else if (!_fetchedAsMetric && targetMetric) {
-        d = (d - 32) * 5 / 9;
-        t = (t - 32) * 5 / 9;
+      if (units.temperatureUnit == TemperatureUnit.fahrenheit) {
+        d = AviationMath.celsiusToFahrenheit(d);
+        t = AviationMath.celsiusToFahrenheit(t);
       }
       
       double spread = t - d;
@@ -354,42 +332,87 @@ class _WeatherPageState extends State<WeatherPage> {
     }
 
     // Visibility
-    // Display raw string from Service
-    String visDisplay = _weatherData?.visibility ?? "--";
+    String visDisplay = "--";
+    if (_weatherData?.visibility != null) {
+      double visMeters = _weatherData!.visibility!; // Source m
+      
+      if (units.distanceSpeedUnit == DistanceSpeedUnit.milesMph || 
+          units.distanceSpeedUnit == DistanceSpeedUnit.nauticalMilesKnots) { // Typically visibility is SM in aviation
+         double visSm = AviationMath.metersToMiles(visMeters);
+         visDisplay = "${visSm.toStringAsFixed(1)} mi";
+      } else {
+         double visKm = visMeters / 1000.0;
+         visDisplay = "${visKm.toStringAsFixed(1)} km";
+      }
+    }
 
-    // Ceiling
-    String ceilingDisplay = _weatherData?.ceiling ?? "--"; 
+    // Ceiling (Dynamic Units)
+    String ceilingDisplay = "--";
+    if (_weatherData?.ceilingType != null) {
+        String type = _weatherData!.ceilingType!;
+        
+        if (type == "Unlimited") {
+            ceilingDisplay = "Unlimited";
+        } else if (_weatherData!.ceilingHeight != null) {
+            double hMeters = _weatherData!.ceilingHeight!; // Source Meters
+            String valStr = "";
+            
+            if (units.altitudeUnit == AltitudeUnit.meters) {
+                valStr = "${hMeters.toStringAsFixed(0)} m";
+            } else {
+                double hFt = AviationMath.metersToFeet(hMeters);
+                // Round to nearest 100ft typically? Or just integer.
+                // Keeping it simple integer.
+                valStr = "${hFt.toStringAsFixed(0)} ft";
+            }
+            
+            // Format: "Overcast ~2000 ft" or "Below Aircraft (500 ft)" logic reconstruction?
+            // WeatherModel stores type like "Overcast", "Broken", "Below Aircraft", "Above".
+            
+            if (type.contains("Below Aircraft")) {
+                ceilingDisplay = "Below Aircraft \n($valStr)";
+            } else if (type.contains("Above")) {
+                ceilingDisplay = "$valStr \nAbove";
+            } else {
+                // "Overcast", "Broken"
+                ceilingDisplay = "$type \n~$valStr";
+            }
+        } else {
+            ceilingDisplay = type;
+        }
+    }
 
     // Wind
     String windDisplay = "--";
     if (_weatherData != null) {
-       double w = _weatherData!.windSpeed;
+       double w = _weatherData!.windSpeed; // Source KMH
        String unit = "kt";
        
-       // Determine source unit
-       // if _fetchedAsMetric: KMH. if !: MPH.
-       
        if (units.distanceSpeedUnit == DistanceSpeedUnit.kilometersKph) {
-         // Target: KPH
-         if (!_fetchedAsMetric) w = w * 1.60934; // MPH -> KPH
-         // If source KMH, do nothing.
-         unit = "kph";
+         unit = "kph"; // Already KMH
        } else if (units.distanceSpeedUnit == DistanceSpeedUnit.milesMph) {
-         // Target: MPH
-         if (_fetchedAsMetric) w = w / 1.60934; // KMH -> MPH
+         w = AviationMath.kmhToMph(w);
          unit = "mph";
        } else {
-         // Target: Knots
-         if (_fetchedAsMetric) w = w * 0.539957; // KMH -> Kt
-         else w = w * 0.868976; // MPH -> Kt
+         w = AviationMath.kmhToKnots(w);
+         unit = "kt";
        }
        
        windDisplay = "${w.toStringAsFixed(0)} $unit";
     }
 
     // Pressure
-    // Display raw string from Service
-    String pressureDisplay = _weatherData?.pressure ?? "--";
+    String pressureDisplay = "--";
+    if (_weatherData?.pressure != null) {
+       double p = _weatherData!.pressure!; // Source hPa
+       
+       if (units.pressureUnit == PressureUnit.inHg) {
+          p = AviationMath.hpaToInHg(p);
+          pressureDisplay = "${p.toStringAsFixed(2)} inHg";
+       } else {
+          pressureDisplay = "${p.toStringAsFixed(2)} hPa";
+       }
+    }
 
     // Humidity
     String humidityDisplay = "--";
@@ -400,8 +423,21 @@ class _WeatherPageState extends State<WeatherPage> {
     // Precipitation
     String precipDisplay = "--";
     if (_weatherData?.precip != null) {
-       precipDisplay = _weatherData!.precip!;
+       double pVal = _weatherData!.precip!; // Source mm
+       
+       // Metric check for precip? Usually follows Distance or Temp preference? 
+       // Or explicit if available. UnitSettingsProvider doesn't have explicit precip unit.
+       // Usually: Metric (mm) if Temp is C or Dist is KM.
+       // Let's use Temp unit as proxy for "System".
+       
+       if (units.temperatureUnit == TemperatureUnit.celsius) {
+          precipDisplay = "${pVal.toStringAsFixed(2)} mm";
+       } else {
+          double pInch = AviationMath.mmToInches(pVal);
+          precipDisplay = "${pInch.toStringAsFixed(2)}\"";
+       }
     } else if (_weatherData != null) {
+         // Fallback logic
         if (precipDisplay == "--") {
             if (_weatherData!.condition.toLowerCase().contains("rain") || 
                 _weatherData!.condition.toLowerCase().contains("snow") ||
@@ -458,10 +494,10 @@ class _WeatherPageState extends State<WeatherPage> {
           ),
           _buildStaggeredTile(
             index: 5,
-            title: "CEILING / PRECIP",
-            value: ceilingDisplay,
-            icon: Icons.cloud_outlined,
-            subtitle: "Precip: $precipDisplay",
+            title: "DENSITY ALT",
+            value: densityAltDisplay,
+            icon: Icons.compress,
+            isAlert: (_weatherData?.densityAltitude ?? 0) > (_weatherData?.altitudeFt ?? 0) + 2000,
           ),
            _buildStaggeredTile(
              index: 6,
@@ -484,10 +520,10 @@ class _WeatherPageState extends State<WeatherPage> {
           ),
           _buildStaggeredTile(
             index: 9,
-            title: "DENSITY ALT",
-            value: densityAltDisplay,
-            icon: Icons.compress,
-            isAlert: (_weatherData?.densityAltitude ?? 0) > (_weatherData?.altitudeFt ?? 0) + 2000,
+            title: "CEILING / PRECIP",
+            value: ceilingDisplay,
+            icon: Icons.cloud_outlined,
+            subtitle: "Precip: $precipDisplay",
           ),
         ],
       ),

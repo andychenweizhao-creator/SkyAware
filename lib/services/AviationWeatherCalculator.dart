@@ -117,4 +117,27 @@ class AviationMath {
   }
 
   static double _degToRad(double deg) => deg * (pi / 180);
+
+  // --- Unit Conversions ---
+
+  static double celsiusToFahrenheit(double c) => (c * 9 / 5) + 32;
+  static double fahrenheitToCelsius(double f) => (f - 32) * 5 / 9;
+
+  static double hpaToInHg(double hpa) => hpa * 0.02953;
+  static double inHgToHpa(double inHg) => inHg / 0.02953;
+
+  static double metersToMiles(double m) => m * 0.000621371;
+  static double milesToMeters(double mi) => mi / 0.000621371;
+  static double metersToFeet(double m) => m * 3.28084;
+  static double feetToMeters(double ft) => ft / 3.28084;
+  
+  static double kmToMiles(double km) => km * 0.621371;
+  
+  static double kmhToMph(double kmh) => kmh * 0.621371;
+  static double kmhToKnots(double kmh) => kmh * 0.539957;
+  
+  static double mphToKnots(double mph) => mph * 0.868976;
+  static double knotsToMph(double kts) => kts * 1.15078;
+  
+  static double mmToInches(double mm) => mm * 0.0393701;
 }

@@ -7,49 +7,37 @@ import 'AviationWeatherCalculator.dart';
 class OpenMeteoService {
   static const String _baseUrl = 'https://api.open-meteo.com/v1/forecast';
 
-  /// Fetches weather data using the user's requirements.
-  /// Includes dynamic timezone and raw output debugging.
+  /// Fetches weather data. Always returns Metric units (Celsius, KMH, hPa, Meters).
+  /// Conversions should happen in the UI.
   Future<WeatherModel> getWeather({
     required double lat,
     required double lon,
-    required double altitudeFt,
-    required bool useMetric,
-    String timezone = 'America/Los_Angeles', // Dynamic Parameter
+    required double altitudeFt, // User's GPS Altitude
+    bool forceSurface = false, // Allow forcing surface mode
+    String timezone = 'America/Los_Angeles',
   }) async {
     try {
-      // 1. Elevation Calculation (ft -> meters)
-      int elevationMeters = (altitudeFt * 0.3048).round();
+      // 1. Dynamic Units - Always Metric
+      String unitParams = '&temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm';
 
-      // 2. Dynamic Units
-      String unitParams;
-      if (useMetric) {
-        unitParams = '&temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm';
-      } else {
-        unitParams = '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch';
-      }
-
-      // 3. API Construction
-      // hourly: dew_point_2m, visibility, cloud_cover_low, cloud_cover_mid, cloud_cover_high
+      // 2. API Construction
       String hourlyFields = 'dew_point_2m,visibility,cloud_cover_low,cloud_cover_mid,cloud_cover_high';
-      
-      // current: relative_humidity_2m,precipitation,rain,showers,snowfall,temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,pressure_msl,surface_pressure
-      String currentFields = 'relative_humidity_2m,precipitation,rain,showers,snowfall,temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,pressure_msl,surface_pressure';
+      String currentFields = 'relative_humidity_2m,precipitation,rain,showers,snowfall,temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,pressure_msl,surface_pressure,weather_code';
 
       String params =
-          'latitude=$lat&longitude=$lon&elevation=$elevationMeters'
+          'latitude=$lat&longitude=$lon'
           '&hourly=$hourlyFields'
           '&current=$currentFields'
           '$unitParams'
-          '&timezone=$timezone'; // Dynamic Parameter
+          '&timezone=$timezone';
 
       Uri uri = Uri.parse('$_baseUrl?$params');
       print('OpenMeteo Request: $uri');
 
-      // --- Reverse Geocoding (Nominatim) ---
+      // --- Reverse Geocoding ---
       String locationName = "Local Forecast";
       try {
         final geoUri = Uri.parse('https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=10&addressdetails=1');
-        // User-Agent is required by Nominatim
         final geoResponse = await http.get(geoUri, headers: {'User-Agent': 'SkyAwareApp'});
         
         if (geoResponse.statusCode == 200) {
@@ -70,65 +58,45 @@ class OpenMeteoService {
                locationName = city;
              } else if (state.isNotEmpty) {
                locationName = state;
-             } else {
-               locationName = "Local Forecast";
              }
           }
         }
       } catch (e) {
         print("Nominatim geocoding error: $e");
-        // Fallback to "Local Forecast" is already set
       }
 
       var response = await http.get(uri);
-
-      // Raw Output (Requirement)
       print('OpenMeteo Raw Response: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final current = data['current'];
-        final currentUnits = data['current_units'];
         final hourly = data['hourly'];
-        final hourlyUnits = data['hourly_units'];
-
-        // --- Data Mapping (Handling Missing Fields Safely) ---
-
-        // Temperature
-        double temp = (current['temperature_2m'] as num).toDouble();
         
-        // Humidity
+        // Elevation Handling
+        double surfaceElevM = (data['elevation'] as num).toDouble();
+        double surfaceElevFt = AviationMath.metersToFeet(surfaceElevM);
+        double aglFt = altitudeFt - surfaceElevFt;
+        
+        // Mode Detection: Active if > 100ft AGL AND not forced to surface
+        bool isAltitudeMode = !forceSurface && (aglFt > 100);
+
+        // --- Data Extraction (Surface Baseline - ALWAYS METRIC) ---
+
+        double tempC = (current['temperature_2m'] as num).toDouble();
         double humidity = (current['relative_humidity_2m'] as num).toDouble();
-        
-        // Wind
-        double windSpeed = (current['wind_speed_10m'] as num).toDouble();
+        double windSpeedKmh = (current['wind_speed_10m'] as num).toDouble(); 
         double windDir = (current['wind_direction_10m'] as num).toDouble();
-        double windGusts = (current['wind_gusts_10m'] as num).toDouble();
-
-        // Pressure (UI) - MSL
-        double rawPressureHpa = (current['pressure_msl'] as num).toDouble();
-        String pressureString;
+        double windGustsKmh = (current['wind_gusts_10m'] as num).toDouble(); 
         
-        if (useMetric) {
-           pressureString = "${rawPressureHpa.toStringAsFixed(2)} hPa";
-        } else {
-           double pressureVal = rawPressureHpa;
-           if (pressureVal > 800) {
-             pressureVal *= 0.02953;
-           }
-           pressureString = "${pressureVal.toStringAsFixed(2)} inHg";
-        }
+        double rawPressureHpa = (current['pressure_msl'] as num).toDouble(); // Altimeter (QNH)
+        double surfacePressureHpa = (current['surface_pressure'] as num).toDouble(); // QFE
 
-        // Precipitation
-        double precipVal = (current['precipitation'] as num).toDouble();
-        String precipUnit = currentUnits['precipitation'] ?? (useMetric ? 'mm' : 'inch');
-        String precipString = "${precipVal.toStringAsFixed(2)} $precipUnit";
+        double precipValMm = (current['precipitation'] as num).toDouble();
+        
+        String condition = "Unknown"; 
 
-        // Weather Code - NOT requested, default to Unknown
-        String condition = "Unknown";
-
-        // --- Linear Interpolation Logic ---
-        // 1. Find indices
+        // --- Time & Interpolation ---
         int index1 = -1;
         int index2 = -1;
         double weight = 0.0;
@@ -139,20 +107,15 @@ class OpenMeteoService {
            
            if (hourly != null && hourly['time'] != null) {
               List<dynamic> times = hourly['time'];
-              // Construct string for current hour matching Open-Meteo format YYYY-MM-DDTHH:00
               String hourStr1 = "${currentDt.toIso8601String().substring(0, 13)}:00";
               index1 = times.indexOf(hourStr1);
               
               if (index1 != -1) {
-                // Determine next index
                 if (index1 + 1 < times.length) {
                    index2 = index1 + 1;
                 } else {
-                   // Fallback to last available (boundary safety)
                    index2 = index1; 
                 }
-                
-                // Calculate weight (minutes / 60)
                 weight = currentDt.minute / 60.0;
               }
            }
@@ -160,168 +123,173 @@ class OpenMeteoService {
            print("Error finding interpolation indices: $e");
         }
 
-        // Helper for interpolation
-        double interpolate(double v1, double v2, double w) {
-          return v1 + (v2 - v1) * w;
-        }
+        double interpolate(double v1, double v2, double w) => v1 + (v2 - v1) * w;
 
-        // --- Dewpoint (Interpolated) ---
-        double? dewpoint;
+        // Dewpoint (Surface - Metric)
+        double dewpointC = 0.0;
         if (index1 != -1 && hourly != null && hourly['dew_point_2m'] != null) {
            List<dynamic> dewList = hourly['dew_point_2m'];
            if (index1 < dewList.length) {
               double d1 = (dewList[index1] as num).toDouble();
               double d2 = (index2 < dewList.length) ? (dewList[index2] as num).toDouble() : d1;
-              dewpoint = interpolate(d1, d2, weight);
+              dewpointC = interpolate(d1, d2, weight); 
            }
         }
 
-        // --- Visibility (Interpolated & Converted) ---
-        String? visibilityString = "N/A";
-        double visMilesForCategory = 10;
+        // Visibility (Surface - Metric Meters)
+        double visRawMeters = 0.0;
         
         if (index1 != -1 && hourly != null && hourly['visibility'] != null) {
            List<dynamic> visList = hourly['visibility'];
            if (index1 < visList.length) {
               double v1 = (visList[index1] as num).toDouble();
               double v2 = (index2 < visList.length) ? (visList[index2] as num).toDouble() : v1;
-              
-              // 1. Interpolate Raw Value
-              double visVal = interpolate(v1, v2, weight);
-              
-              // 2. Unit Logic
-              String visUnit = 'm'; 
-              if (hourlyUnits != null && hourlyUnits['visibility'] != null) {
-                visUnit = hourlyUnits['visibility'].toString();
-              }
-              
-              // Calculate visMiles for Category Logic
-              if (visUnit == 'ft') {
-                  visMilesForCategory = visVal / 5280;
-              } else {
-                  // assume 'm'
-                  visMilesForCategory = visVal * 0.000621371;
-              }
-
-              if (useMetric) {
-                // Convert to KM
-                double visKm;
-                if (visUnit == 'ft') {
-                  visKm = visVal * 0.0003048;
-                } else {
-                  visKm = visVal / 1000;
-                }
-                visibilityString = "${visKm.toStringAsFixed(1)} km";
-              } else {
-                // Display in Miles
-                visibilityString = "${visMilesForCategory.toStringAsFixed(1)} mi";
-              }
+              visRawMeters = interpolate(v1, v2, weight);
            }
         }
 
-        // Ceiling / Sky Condition Calculation
-        String ceilingString = "Unknown";
-        double ceilingFeetForCategory = 100000; 
-        
-        try {
-          double totalCover = (current['cloud_cover'] as num).toDouble();
-          
-          // Sky Condition string logic
-          String skyCondition;
-          if (totalCover < 10) {
-            skyCondition = "SKC (Clear)";
-          } else if (totalCover < 30) {
-            skyCondition = "FEW (Few)";
-          } else if (totalCover < 60) {
-            skyCondition = "SCT (Scattered)";
-          } else if (totalCover < 90) {
-            skyCondition = "BKN (Broken)";
-          } else {
-            skyCondition = "OVC (Overcast)";
-          }
+        // Ceiling (Surface)
+        double totalCover = (current['cloud_cover'] as num).toDouble();
+        double estimatedCeilingAglFt = 100000;
+        String ceilingType = "Unknown";
 
-          // Ceiling Height Logic
-          String heightStr = "";
-          if (totalCover >= 60) { // Ceiling represents BKN or OVC
+        if (totalCover < 50) {
+            ceilingType = "Unlimited";
+        } else {
+             // Estimate Height
              if (index1 != -1 && hourly != null) {
-               double low = 0;
-               double mid = 0;
-               double high = 0;
+               double low = 0, mid = 0, high = 0;
+               if (hourly['cloud_cover_low'] != null) low = (hourly['cloud_cover_low'][index1] as num).toDouble();
+               if (hourly['cloud_cover_mid'] != null) mid = (hourly['cloud_cover_mid'][index1] as num).toDouble();
+               if (hourly['cloud_cover_high'] != null) high = (hourly['cloud_cover_high'][index1] as num).toDouble();
                
-               if (hourly['cloud_cover_low'] != null) {
-                 low = (hourly['cloud_cover_low'][index1] as num).toDouble();
-               }
-               if (hourly['cloud_cover_mid'] != null) {
-                 mid = (hourly['cloud_cover_mid'][index1] as num).toDouble();
-               }
-               if (hourly['cloud_cover_high'] != null) {
-                 high = (hourly['cloud_cover_high'][index1] as num).toDouble();
-               }
-               
-               if (low > 50) {
-                 heightStr = "~2,000 ft";
-                 ceilingFeetForCategory = 2000;
-               } else if (mid > 50) {
-                 heightStr = "~8,000 ft";
-                 ceilingFeetForCategory = 8000;
-               } else {
-                 heightStr = "~20,000 ft";
-                 ceilingFeetForCategory = 20000;
-               }
+               if (low > 50) estimatedCeilingAglFt = 2000;
+               else if (mid > 50) estimatedCeilingAglFt = 8000;
+               else estimatedCeilingAglFt = 20000;
              }
-          } else {
-             ceilingFeetForCategory = 100000;
-          }
-          
-          if (heightStr.isNotEmpty) {
-             ceilingString = "$skyCondition $heightStr";
-          } else {
-             ceilingString = skyCondition;
-          }
-          
-        } catch (e) {
-          print("Error calculating ceiling: $e");
-          ceilingString = "${current['cloud_cover']}%"; 
+             
+             ceilingType = totalCover > 90 ? "Overcast" : "Broken";
+        }
+
+        // --- MODE CALCULATIONS (Physics in Metric) ---
+        
+        double finalTempC = tempC;
+        double finalDewpointC = dewpointC;
+        double finalPressureHpa = rawPressureHpa; 
+        double finalWindSpeedKmh = windSpeedKmh;
+        double finalVisMeters = visRawMeters;
+        
+        double? finalCeilingHeightMeters;
+        String finalCeilingType = ceilingType;
+        
+        double daPA_ft = 0;
+
+        // Altimeter in inHg (needed for PA calc in Feet)
+        double altimeterInHg = AviationMath.hpaToInHg(rawPressureHpa);
+
+        if (isAltitudeMode) {
+           // 1. Temperature Lapse Rate (1.98 C per 1000ft)
+           finalTempC = tempC - (1.98 * (aglFt / 1000));
+
+           // 2. Dewpoint Lapse Rate (0.278 C per 1000ft)
+           finalDewpointC = dewpointC - (0.278 * (aglFt / 1000));
+
+           // 3. Pressure at Altitude
+           // P = P0 * (1 - 2.25577e-5 * h)^5.25588 (h in meters)
+           double aglMeters = AviationMath.feetToMeters(aglFt);
+           double localPressureHpa = surfacePressureHpa * pow((1 - 2.25577e-5 * aglMeters), 5.25588);
+           finalPressureHpa = localPressureHpa;
+
+           // 4. Wind Gradient (Power Law)
+           // V = V0 * (h/10)^0.143 (h in meters)
+           // Ensure h >= 10m
+           double hForWind = max(aglMeters, 10.0);
+           finalWindSpeedKmh = windSpeedKmh * pow((hForWind / 10.0), 0.143);
+
+           // 5. Visibility (Cloud Layer LCL)
+           // LCL(ft) approx 400 * (T_surf - Td_surf)
+           double lclFt = 400 * (tempC - dewpointC);
+           if (totalCover > 50 && aglFt >= lclFt) {
+              // In cloud
+              finalVisMeters = 100; // ~0.1 km
+           }
+           
+           // 6. Ceiling Relative to Aircraft
+           if (estimatedCeilingAglFt < 100000) {
+              double relCeiling = estimatedCeilingAglFt - aglFt;
+              if (relCeiling < 0) {
+                 finalCeilingType = "Below Aircraft";
+                 // Store absolute difference in meters
+                 finalCeilingHeightMeters = AviationMath.feetToMeters(relCeiling.abs());
+              } else {
+                 finalCeilingType = "Above";
+                 finalCeilingHeightMeters = AviationMath.feetToMeters(relCeiling);
+              }
+           } else {
+              // Unlimited
+              finalCeilingType = "Unlimited";
+              finalCeilingHeightMeters = null;
+           }
+
+           // PA at Altitude
+           // PA = PA_surf + (alt - elev)
+           double paSurf = (29.92 - altimeterInHg) * 1000 + surfaceElevFt;
+           daPA_ft = paSurf + aglFt;
+
+        } else {
+           // Surface Mode
+           finalTempC = tempC;
+           finalDewpointC = dewpointC;
+           finalPressureHpa = rawPressureHpa; 
+           
+           if (estimatedCeilingAglFt < 100000) {
+               finalCeilingHeightMeters = AviationMath.feetToMeters(estimatedCeilingAglFt);
+           } else {
+               finalCeilingType = "Unlimited";
+               finalCeilingHeightMeters = null;
+           }
+           
+           // PA Surface
+           daPA_ft = (29.92 - altimeterInHg) * 1000 + surfaceElevFt;
+        }
+
+        // --- Final Formatting & Conversions ---
+        // DA Calculation
+        double isaTempAtAltC = 15 - (1.98 * daPA_ft / 1000);
+        double daFt = daPA_ft + (118.8 * (finalTempC - isaTempAtAltC));
+        double daMeters = AviationMath.feetToMeters(daFt);
+
+        // Flight Category Logic (Needs Miles)
+        double visMiles = AviationMath.metersToMiles(finalVisMeters);
+        
+        // Ceiling for Category (Must be in Feet, AGL)
+        double ceilingFeetForCategory = 100000;
+        if (isAltitudeMode) {
+           // Category logic usually applies to Surface Conditions?
+           // Or should it reflect current condition?
+           // Usually VFR/IFR is based on Surface METARs.
+           // Let's use the Surface Estimate for Category Logic to be safe.
+           ceilingFeetForCategory = estimatedCeilingAglFt;
+        } else {
+           ceilingFeetForCategory = estimatedCeilingAglFt;
         }
         
-        // --- Flight Category Logic ---
         String flightCategory = "VFR";
-        if (visMilesForCategory < 1 || ceilingFeetForCategory < 500) {
+        if (visMiles < 1 || ceilingFeetForCategory < 500) {
            flightCategory = "LIFR";
-        } else if (visMilesForCategory < 3 || ceilingFeetForCategory < 1000) {
+        } else if (visMiles < 3 || ceilingFeetForCategory < 1000) {
            flightCategory = "IFR";
-        } else if (visMilesForCategory <= 5 || ceilingFeetForCategory <= 3000) {
+        } else if (visMiles <= 5 || ceilingFeetForCategory <= 3000) {
            flightCategory = "MVFR";
         } else {
            flightCategory = "VFR";
         }
         
-        if (windGusts > 25) {
+        // Safety Warning
+        double windSpeedKts = AviationMath.kmhToKnots(finalWindSpeedKmh);
+        double windGustsKts = AviationMath.kmhToKnots(windGustsKmh);
+        if (windSpeedKts > 20 || windGustsKts > 25) {
            flightCategory += " (DANGER)";
-        }
-
-        // --- Density Altitude Calculation ---
-        // 1. Altimeter Conversion: Convert rawPressureHpa to Altimeter Setting in inHg
-        double altimeterInHg = rawPressureHpa * 0.02953; 
-        
-        // 2. Refined Pressure Altitude (PA)
-        double pressureAltitudeFt = (29.92 - altimeterInHg) * 1000 + altitudeFt;
-        
-        // 3. Get Temp in Celsius
-        double tempC = useMetric ? temp : (temp - 32) * 5 / 9;
-        
-        // 4. ISA Temp
-        double isaTempC = 15 - (1.98 * pressureAltitudeFt / 1000);
-        
-        // 5. Precise DA Formula
-        double densityAltitudeFt = pressureAltitudeFt + (118.8 * (tempC - isaTempC));
-        
-        // 6. Unit-Specific Output
-        double finalDensityAltitude;
-        if (useMetric) {
-           finalDensityAltitude = densityAltitudeFt * 0.3048; // Convert to Meters
-        } else {
-           finalDensityAltitude = densityAltitudeFt; // Keep in Feet
         }
 
         // --- Sunrise/Sunset ---
@@ -331,27 +299,102 @@ class OpenMeteoService {
           date: DateTime.now(),
         );
 
+        // --- Dynamic Background Engine ---
+        DateTime now = DateTime.now();
+        String timePhase = "day";
+        bool isDay = true;
+
+        if (sunTimes.sunrise != null && sunTimes.sunset != null) {
+          DateTime sr = sunTimes.sunrise!;
+          DateTime ss = sunTimes.sunset!;
+          DateTime srStart = sr.subtract(Duration(minutes: 30));
+          DateTime srEnd = sr.add(Duration(minutes: 30));
+          DateTime ssStart = ss.subtract(Duration(minutes: 30));
+          DateTime ssEnd = ss.add(Duration(minutes: 30));
+
+          if (now.isAfter(srStart) && now.isBefore(srEnd)) {
+            timePhase = "sunrise";
+            isDay = true;
+          } else if (now.isAfter(ssStart) && now.isBefore(ssEnd)) {
+            timePhase = "sunset";
+            isDay = true;
+          } else if (now.isAfter(srEnd) && now.isBefore(ssStart)) {
+            timePhase = "day";
+            isDay = true;
+          } else {
+            timePhase = "night";
+            isDay = false;
+          }
+        }
+
+        // Weather Phenomenon
+        int weatherCode = (current['weather_code'] as num?)?.toInt() ?? 0;
+        double rainVal = (current['rain'] as num?)?.toDouble() ?? 0.0;
+        double showersVal = (current['showers'] as num?)?.toDouble() ?? 0.0;
+        double snowfallVal = (current['snowfall'] as num?)?.toDouble() ?? 0.0;
+        
+        bool isThunderstorm = (weatherCode == 95 || weatherCode == 96 || weatherCode == 99);
+        if (!isThunderstorm && (rainVal > 0 || showersVal > 0) && windGustsKts > 35) {
+           isThunderstorm = true;
+        }
+
+        String weatherStr = "clear";
+        if (isThunderstorm) {
+          weatherStr = "thunderstorm";
+        } else if (snowfallVal > 0) {
+          weatherStr = snowfallVal > 0.5 ? "snow_heavy" : "snow_light"; 
+        } else if (rainVal > 0 || showersVal > 0) {
+          double totalRain = rainVal + showersVal;
+          weatherStr = totalRain > 2.0 ? "rain_heavy" : "rain_light"; 
+        } else {
+           if (totalCover <= 15) {
+             weatherStr = "clear";
+           } else if (totalCover <= 50) {
+             weatherStr = "partly_cloudy";
+           } else if (totalCover <= 85) {
+             weatherStr = "cloudy";
+           } else {
+             weatherStr = "overcast";
+           }
+        }
+
+        if (visMiles < 1.0 && humidity > 90) {
+           weatherStr += "_foggy";
+        }
+
+        String backgroundState = "${timePhase}_$weatherStr";
+        if (isAltitudeMode && ceilingFeetForCategory < 100000 && aglFt > ceilingFeetForCategory) {
+           backgroundState = "above_clouds";
+        }
+        
+        double cloudOpacity = (totalCover / 100.0).clamp(0.0, 1.0);
+        String conditionText = weatherStr.replaceAll('_', ' ').toUpperCase(); 
+
         return WeatherModel(
-          temperature: temp,
-          windSpeed: windSpeed,
+          temperature: finalTempC, // Metric (C)
+          windSpeed: finalWindSpeedKmh, // Metric (KPH)
           windDirection: windDir,
-          pressure: pressureString,
+          pressure: finalPressureHpa, // Metric (hPa)
           humidity: humidity,
-          dewpoint: dewpoint,
-          condition: condition,
-          visibility: visibilityString,
+          dewpoint: finalDewpointC, // Metric (C)
+          condition: conditionText,
+          visibility: finalVisMeters, // Metric (Meters)
           flightCategory: flightCategory,
-          ceiling: ceilingString,
-          densityAltitude: finalDensityAltitude,
-          stationId: "GPS (Open-Meteo)",
+          ceilingHeight: finalCeilingHeightMeters,
+          ceilingType: finalCeilingType,
+          densityAltitude: daMeters, // Metric (Meters)
+          stationId: isAltitudeMode ? "GPS (Alt Mode)" : "GPS (Surface)",
           altitudeFt: altitudeFt,
           latitude: lat,
           longitude: lon,
-          locationName: locationName, // Mapped to the new Nominatim result
+          locationName: locationName,
           isInterpolated: true,
-          precip: precipString,
+          precip: precipValMm, // Metric (mm)
           sunrise: sunTimes.sunrise,
           sunset: sunTimes.sunset,
+          backgroundState: backgroundState,
+          isDay: isDay,
+          cloudOpacity: cloudOpacity,
         );
 
       } else {
