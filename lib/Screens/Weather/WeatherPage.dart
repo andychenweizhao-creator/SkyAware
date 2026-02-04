@@ -302,13 +302,30 @@ class _WeatherPageState extends State<WeatherPage> {
   Widget _buildDetailsGrid() {
     final units = Provider.of<UnitSettingsProvider>(context);
 
-    // Density Altitude
+    // Density Altitude Logic Update for Dynamic Units
     String densityAltDisplay = "--";
     if (_weatherData?.densityAltitude != null) {
+      double da = _weatherData!.densityAltitude!;
+      
+      // Check target unit
       if (units.altitudeUnit == AltitudeUnit.meters) {
-        densityAltDisplay = "${(_weatherData!.densityAltitude! * 0.3048).toStringAsFixed(0)} m";
+         // We want Meters.
+         if (_fetchedAsMetric) {
+           // Source is Meters.
+           densityAltDisplay = "${da.toStringAsFixed(0)} m";
+         } else {
+           // Source is Feet. Convert to Meters.
+           densityAltDisplay = "${(da * 0.3048).toStringAsFixed(0)} m";
+         }
       } else {
-        densityAltDisplay = "${_weatherData!.densityAltitude!.toStringAsFixed(0)} ft";
+         // We want Feet.
+         if (_fetchedAsMetric) {
+           // Source is Meters. Convert to Feet.
+           densityAltDisplay = "${(da / 0.3048).toStringAsFixed(0)} ft";
+         } else {
+           // Source is Feet.
+           densityAltDisplay = "${da.toStringAsFixed(0)} ft";
+         }
       }
     }
 
@@ -419,10 +436,10 @@ class _WeatherPageState extends State<WeatherPage> {
         children: [
           _buildStaggeredTile(
             index: 2,
-            title: "DENSITY ALT",
-            value: densityAltDisplay,
-            icon: Icons.compress,
-            isAlert: (_weatherData?.densityAltitude ?? 0) > (_weatherData?.altitudeFt ?? 0) + 2000,
+            title: "SUNRISE / SUNSET",
+            value: sunDisplay,
+            icon: Icons.wb_twilight,
+            valueFontSize: 18, 
           ),
           _buildStaggeredTile(
             index: 3,
@@ -467,10 +484,10 @@ class _WeatherPageState extends State<WeatherPage> {
           ),
           _buildStaggeredTile(
             index: 9,
-            title: "SUNRISE / SUNSET",
-            value: sunDisplay,
-            icon: Icons.wb_twilight,
-            valueFontSize: 18, 
+            title: "DENSITY ALT",
+            value: densityAltDisplay,
+            icon: Icons.compress,
+            isAlert: (_weatherData?.densityAltitude ?? 0) > (_weatherData?.altitudeFt ?? 0) + 2000,
           ),
         ],
       ),
