@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:skyaware/UI/theme_controller.dart';
+import '../../models/UserModel.dart';
+import '../../services/FireBaseService.dart';
 import '../Login/login_page.dart';
 import 'unit_preferences_section.dart';
 
@@ -185,6 +187,7 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
                                   value: isDark,
                                   onChanged: (val) {
                                     themeController.toggleTheme(val);
+                                    _updatePreference(key: 'darkMode', value: val);
                                   },
                                   activeColor: const Color(0xFF0A84FF),
                                 )
@@ -271,6 +274,30 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
       ),
     );
   }
+  _updatePreference({
+    required String key,
+    required dynamic value
+  }) async {
+    final cuurentUser = FirebaseAuth.instance.currentUser;
+    if (cuurentUser == null) {
+      return;
+    }
+    Usermodel user ;
+    final fs = Firebaseservice();
+    final userData = await fs.getUserData();
+    if(userData != null) {
+      user = Usermodel.fromMap(userData);
+    } else {
+      user = Usermodel(
+          DarkMode: DarkLight.Light,
+          DistanceUnit: DistanceSpeedUnit.nauticalMilesKnots,
+          Altitude: AltitudeUnit.feet,
+          Pressure: PressureUnit.hpa,
+          Temperature: TemperatureUnit.celsius,
+      );
+    }
+  }
+
 
   Widget _buildProfileSection(User? user, bool isDark, Color textColor, Color secondaryTextColor, Color containerColor, Color borderColor) {
     if (user == null) {

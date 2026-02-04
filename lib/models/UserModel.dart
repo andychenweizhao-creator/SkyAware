@@ -33,8 +33,24 @@ class Usermodel {
     required this.Altitude,
     required this.Pressure,
     required this.Temperature
-  }){
+  });
 
+  Map<String, dynamic> toMap() {
+    return {
+      'DarkMode': DarkMode.index,
+      'DistanceUnit': DistanceUnit.index,
+      'Altitude': Altitude.index,
+      'Pressure': Pressure.index,
+      'Temperature': Temperature.index
+    };
   }
-
+  factory Usermodel.fromMap(Map<String, dynamic> map) {
+    return Usermodel(
+      DarkMode: DarkLight.values[map['DarkMode'] ?? 0],
+      DistanceUnit: DistanceSpeedUnit.values[map['DistanceUnit'] ?? 0],
+      Altitude: AltitudeUnit.values[map['Altitude'] ?? 0],
+      Pressure: PressureUnit.values[map['Pressure'] ?? 0],
+      Temperature: TemperatureUnit.values[map['Temperature'] ?? 0],
+    );
+  }
 }
