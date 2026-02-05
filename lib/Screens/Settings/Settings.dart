@@ -156,6 +156,9 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
                             containerColor: containerColor,
                             borderColor: borderColor,
                             isDark: isDark,
+                            onUnitChange: (key,value){
+                              _updatePreference(key: key, value: value);
+                            }
                           ),
 
                           const SizedBox(height: 24),
@@ -278,8 +281,8 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
     required String key,
     required dynamic value
   }) async {
-    final cuurentUser = FirebaseAuth.instance.currentUser;
-    if (cuurentUser == null) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
       return;
     }
     Usermodel user ;
@@ -296,6 +299,28 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
           Temperature: TemperatureUnit.celsius,
       );
     }
+
+    print("This is the key");
+    print(key);
+
+    switch (key) {
+      case 'darkMode':
+        user.DarkMode = value ? DarkLight.Dark : DarkLight.Light;
+        break;
+        case 'DistanceUnit':
+          user.DistanceUnit = value;
+          break;
+        case 'Altitude':
+          user.Altitude = value;
+          break;
+        case 'Pressure':
+          user.Pressure = value;
+          break;
+        case 'Temperature':
+          user.Temperature = value;
+          break;
+    }
+    await fs.setUserData(user.toMap());
   }
 
 

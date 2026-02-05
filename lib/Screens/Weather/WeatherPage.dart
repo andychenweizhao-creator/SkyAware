@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
@@ -452,12 +453,21 @@ class _WeatherPageState extends State<WeatherPage> {
     // Sunrise / Sunset
     String sunDisplay = "--";
     if (_weatherData?.sunrise != null && _weatherData?.sunset != null) {
-       String formatTime(DateTime dt) {
-          String h = dt.hour.toString().padLeft(2, '0');
-          String m = dt.minute.toString().padLeft(2, '0');
-          return "$h:$m";
+       String formatTime(DateTime dt, {bool isZulu = false}) {
+          // Format as HH:mm
+          return DateFormat('HH:mm').format(dt);
        }
-       sunDisplay = "SR ${formatTime(_weatherData!.sunrise!)}\nSS ${formatTime(_weatherData!.sunset!)}";
+       
+       // Using calculated dates (Local to Device)
+       DateTime srLocal = _weatherData!.sunrise!;
+       DateTime ssLocal = _weatherData!.sunset!;
+       
+       // Convert to Zulu
+       DateTime srZulu = srLocal.toUtc();
+       DateTime ssZulu = ssLocal.toUtc();
+       
+       sunDisplay = "SR ${formatTime(srLocal)} L / ${formatTime(srZulu)} Z\n"
+                    "SS ${formatTime(ssLocal)} L / ${formatTime(ssZulu)} Z";
     }
 
     return Padding(
@@ -475,7 +485,7 @@ class _WeatherPageState extends State<WeatherPage> {
             title: "SUNRISE / SUNSET",
             value: sunDisplay,
             icon: Icons.wb_twilight,
-            valueFontSize: 18, 
+            valueFontSize: 14, // Adjusted for longer text
           ),
           _buildStaggeredTile(
             index: 3,

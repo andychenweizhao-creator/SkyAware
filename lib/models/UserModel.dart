@@ -37,11 +37,11 @@ class Usermodel {
 
   Map<String, dynamic> toMap() {
     return {
-      'DarkMode': DarkMode.index,
-      'DistanceUnit': DistanceUnit.index,
-      'Altitude': Altitude.index,
-      'Pressure': Pressure.index,
-      'Temperature': Temperature.index
+      'DarkMode': DarkMode.name,
+      'DistanceUnit': DistanceUnit.name,
+      'Altitude': Altitude.name,
+      'Pressure': Pressure.name,
+      'Temperature': Temperature.name
     };
   }
   factory Usermodel.fromMap(Map<String, dynamic> map) {

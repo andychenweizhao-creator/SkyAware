@@ -8,6 +8,8 @@ class UnitPreferencesSection extends StatelessWidget {
   final Color containerColor;
   final Color borderColor;
   final bool isDark;
+  final Function(String key, dynamic value) onUnitChange;
+
 
   const UnitPreferencesSection({
     super.key,
@@ -16,6 +18,7 @@ class UnitPreferencesSection extends StatelessWidget {
     required this.containerColor,
     required this.borderColor,
     required this.isDark,
+    required this.onUnitChange
   });
 
   @override
@@ -92,7 +95,8 @@ class UnitPreferencesSection extends StatelessWidget {
     required String value,
     required VoidCallback onTap,
   }) {
-    final iconBgColor = isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05);
+    final iconBgColor = isDark ? Colors.white.withValues(alpha: 0.05) : Colors
+        .black.withValues(alpha: 0.05);
 
     return Material(
       color: Colors.transparent,
@@ -123,7 +127,8 @@ class UnitPreferencesSection extends StatelessWidget {
                 style: TextStyle(color: secondaryTextColor, fontSize: 14),
               ),
               const SizedBox(width: 8),
-              Icon(Icons.arrow_forward_ios, color: textColor.withValues(alpha: 0.3), size: 14),
+              Icon(Icons.arrow_forward_ios,
+                  color: textColor.withValues(alpha: 0.3), size: 14),
             ],
           ),
         ),
@@ -135,9 +140,12 @@ class UnitPreferencesSection extends StatelessWidget {
 
   String _getDistSpeedLabel(DistanceSpeedUnit unit) {
     switch (unit) {
-      case DistanceSpeedUnit.nauticalMilesKnots: return "NM & kt";
-      case DistanceSpeedUnit.kilometersKph: return "km & km/h";
-      case DistanceSpeedUnit.milesMph: return "mi & mph";
+      case DistanceSpeedUnit.nauticalMilesKnots:
+        return "NM & kt";
+      case DistanceSpeedUnit.kilometersKph:
+        return "km & km/h";
+      case DistanceSpeedUnit.milesMph:
+        return "mi & mph";
     }
   }
 
@@ -171,7 +179,10 @@ class UnitPreferencesSection extends StatelessWidget {
       DistanceSpeedUnit.values,
       provider.distanceSpeedUnit,
       (unit) => _getDistSpeedLabel(unit),
-      (unit) => provider.setDistanceSpeedUnit(unit),
+      (unit) {
+        provider.setDistanceSpeedUnit(unit);
+        onUnitChange('distanceUnit', unit);
+      },
     );
   }
 
@@ -182,7 +193,10 @@ class UnitPreferencesSection extends StatelessWidget {
       AltitudeUnit.values,
       provider.altitudeUnit,
       (unit) => _getAltitudeLabel(unit),
-      (unit) => provider.setAltitudeUnit(unit),
+      (unit) {
+        provider.setAltitudeUnit(unit);
+        onUnitChange('altitudeUnit', unit);
+      },
     );
   }
 
@@ -193,7 +207,10 @@ class UnitPreferencesSection extends StatelessWidget {
       PressureUnit.values,
       provider.pressureUnit,
       (unit) => _getPressureLabel(unit),
-      (unit) => provider.setPressureUnit(unit),
+      (unit) {
+        provider.setPressureUnit(unit);
+        onUnitChange('pressureUnit', unit);
+      },
     );
   }
 
@@ -204,7 +221,10 @@ class UnitPreferencesSection extends StatelessWidget {
       TemperatureUnit.values,
       provider.temperatureUnit,
       (unit) => _getTemperatureLabel(unit),
-      (unit) => provider.setTemperatureUnit(unit),
+      (unit) {
+        provider.setTemperatureUnit(unit);
+        onUnitChange('temperatureUnit', unit);
+      },
     );
   }
 

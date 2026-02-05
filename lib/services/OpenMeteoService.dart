@@ -14,15 +14,16 @@ class OpenMeteoService {
     required double lon,
     required double altitudeFt, // User's GPS Altitude
     bool forceSurface = false, // Allow forcing surface mode
-    String timezone = 'America/Los_Angeles',
+    String timezone = 'UTC', // Default to UTC for data, handled locally
   }) async {
     try {
       // 1. Dynamic Units - Always Metric
       String unitParams = '&temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm';
 
       // 2. API Construction
+      // Removed &daily=sunrise,sunset as we calculate locally
       String hourlyFields = 'dew_point_2m,visibility,cloud_cover_low,cloud_cover_mid,cloud_cover_high';
-      String currentFields = 'relative_humidity_2m,precipitation,rain,showers,snowfall,temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,pressure_msl,surface_pressure,weather_code';
+      String currentFields = 'relative_humidity_2m,precipitation,rain,showers,snowfall,temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,pressure_msl,surface_pressure,weather_code,is_day';
 
       String params =
           'latitude=$lat&longitude=$lon'
@@ -94,8 +95,6 @@ class OpenMeteoService {
 
         double precipValMm = (current['precipitation'] as num).toDouble();
         
-        String condition = "Unknown"; 
-
         // --- Time & Interpolation ---
         int index1 = -1;
         int index2 = -1;
@@ -103,7 +102,7 @@ class OpenMeteoService {
         
         try {
            String currentTimeStr = current['time']; 
-           DateTime currentDt = DateTime.parse(currentTimeStr);
+           DateTime currentDt = DateTime.parse(currentTimeStr); // Since timezone=UTC, this is UTC
            
            if (hourly != null && hourly['time'] != null) {
               List<dynamic> times = hourly['time'];
@@ -265,10 +264,6 @@ class OpenMeteoService {
         // Ceiling for Category (Must be in Feet, AGL)
         double ceilingFeetForCategory = 100000;
         if (isAltitudeMode) {
-           // Category logic usually applies to Surface Conditions?
-           // Or should it reflect current condition?
-           // Usually VFR/IFR is based on Surface METARs.
-           // Let's use the Surface Estimate for Category Logic to be safe.
            ceilingFeetForCategory = estimatedCeilingAglFt;
         } else {
            ceilingFeetForCategory = estimatedCeilingAglFt;
@@ -292,7 +287,9 @@ class OpenMeteoService {
            flightCategory += " (DANGER)";
         }
 
-        // --- Sunrise/Sunset ---
+        // --- Sunrise/Sunset (LOCAL CALCULATION - NO API DEPENDENCY) ---
+        // Uses AviationWeatherCalculator (sunrise_sunset_calc) which relies on 
+        // device's DateTime.now() timezone offset to return Local Times.
         final sunTimes = AviationMath.calculateRawSunriseSunset(
           lat: lat,
           lon: lon,
@@ -301,9 +298,13 @@ class OpenMeteoService {
 
         // --- Dynamic Background Engine ---
         DateTime now = DateTime.now();
-        String timePhase = "day";
-        bool isDay = true;
-
+        // Use 'is_day' from API for primary day/night switch as it handles complex twilight better
+        // than simple sunrise/sunset times, but we can fallback if needed.
+        bool isDay = (current['is_day'] as num) == 1; 
+        
+        String timePhase = isDay ? "day" : "night";
+        
+        // Proximity Check for Sunrise/Sunset Background Visuals
         if (sunTimes.sunrise != null && sunTimes.sunset != null) {
           DateTime sr = sunTimes.sunrise!;
           DateTime ss = sunTimes.sunset!;
@@ -314,16 +315,8 @@ class OpenMeteoService {
 
           if (now.isAfter(srStart) && now.isBefore(srEnd)) {
             timePhase = "sunrise";
-            isDay = true;
           } else if (now.isAfter(ssStart) && now.isBefore(ssEnd)) {
             timePhase = "sunset";
-            isDay = true;
-          } else if (now.isAfter(srEnd) && now.isBefore(ssStart)) {
-            timePhase = "day";
-            isDay = true;
-          } else {
-            timePhase = "night";
-            isDay = false;
           }
         }
 
