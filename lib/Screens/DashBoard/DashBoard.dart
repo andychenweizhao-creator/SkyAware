@@ -17,8 +17,12 @@ import 'Maps/maps.dart';
 import 'WeatherFeature.dart';
 import '../../services/terrain_service.dart';
 import 'CollapsibleLayerMenu.dart';
-
-
+import '../../services/ai_airport_service.dart';
+import '../../UI/AppAnimations.dart';
+import '../../UI/AirportDetailSheet.dart';
+import '../../services/airport_database_service.dart'; // Import local DB service
+import '../../services/ai_grading_service.dart'; // Import grading service
+import '../../services/weather_service.dart'; // Import WeatherService
 
 enum AppMode { preflight, inFlight }
 
@@ -29,7 +33,9 @@ class HazardInfo {
 }
 
 class DashBoard extends StatefulWidget {
-  const DashBoard({super.key});
+  final ValueChanged<bool>? onEmergencyStateChanged;
+
+  const DashBoard({super.key, this.onEmergencyStateChanged});
 
   @override
   State<DashBoard> createState() => _DashBoardState();
@@ -51,29 +57,197 @@ class _DashBoardState extends State<DashBoard> {
   List<HazardInfo> _preflightHazards = [];
   final TerrainService _terrainService = TerrainService();
 
+  // Local Airport Database & Grading
+  bool _showAirports = false; // State for airport layer
+  List<Marker> _airportMarkers = [];
+  Timer? _mapDebounce; // For debouncing map moves
+  StreamSubscription? _mapEventSubscription; // Subscription for map events
+
   // Gemini AI Model
   GenerativeModel? _model;
-  final String _kGeminiApiKey = 'AIzaSyB_nwHRCKO9RgAgOXTPfeL5o_UbL3GW3X4'; // IMPORTANT: REPLACE WITH YOUR KEY
+  // Use the working key from HomePage to avoid initialization errors
+  final String _kGeminiApiKey = 'AIzaSyBqqjz5thRK3Lt6xQcivugnHReGkbgK9rY';
 
   @override
   void initState() {
     super.initState();
     // Initialize the Gemini Model
     if (_kGeminiApiKey.isNotEmpty && _kGeminiApiKey != 'YOUR_GEMINI_API_KEY') {
-      _model = GenerativeModel(
-        model: 'gemini-3-pro-preview', // Correct exact name from user's list
-        apiKey: _kGeminiApiKey,
-      );
+      try {
+        _model = GenerativeModel(
+          model: 'gemini-3-pro-preview', // Correct exact name from user's list
+          apiKey: _kGeminiApiKey,
+          // Disable Safety Settings for Flight Sim/Emergency use
+          safetySettings: [
+            HarmCategory.harassment,
+            HarmCategory.hateSpeech,
+            HarmCategory.sexuallyExplicit,
+            HarmCategory.dangerousContent,
+          ].map((category) => SafetySetting(category, HarmBlockThreshold.none)).toList(),
+        );
+      } catch (e) {
+        print("Gemini Init Error: $e");
+      }
     }
+    
+    // Load Airport Database & Initial Update
+    AirportDatabaseService().loadDatabase().then((_) {
+      // Trigger update if airports are enabled (or to be ready)
+      if (_showAirports) {
+        _updateVisibleAirports();
+      }
+    });
+
+    // Subscribe to Map Events
+    _mapEventSubscription = _mapController.mapEventStream.listen((event) {
+      if (event is MapEventMoveEnd) {
+        _mapDebounce?.cancel();
+        _mapDebounce = Timer(const Duration(milliseconds: 500), () {
+          _updateVisibleAirports();
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    _mapEventSubscription?.cancel();
+    _mapDebounce?.cancel();
     _textController.dispose();
     _focusNode.dispose();
     _altController.dispose();
     super.dispose();
   }
+
+  // --- NEW: Airport Layer Logic ---
+
+  Future<void> _updateVisibleAirports() async {
+    if (!_showAirports) return;
+
+    // 1. Get Visible Bounds
+    final bounds = _mapController.camera.visibleBounds;
+    
+    // 2. Query Local Database
+    final visibleAirports = AirportDatabaseService().getAirportsInBounds(bounds);
+    
+    // Limit to reasonable number for UI and AI (e.g. 20) to prevent clutter/cost
+    final limitedAirports = visibleAirports.take(20).toList();
+
+    // 3. Render Initial Markers with Type Colors
+    if (mounted) {
+      setState(() {
+        _airportMarkers = limitedAirports.map((airport) => _buildAirportMarker(airport)).toList();
+      });
+    }
+
+    // 4. Fetch Flight Categories
+    final codes = limitedAirports.map((a) => a.ident).toList();
+    if (codes.isNotEmpty) {
+      try {
+        final categories = await WeatherService.getFlightCategories(codes);
+        
+        // 5. Update Markers with Flight Category Colors
+        if (mounted) {
+          setState(() {
+            _airportMarkers = limitedAirports.map((airport) {
+              // Apply category if exists
+              final category = categories[airport.ident];
+              if (category != null) {
+                airport.riskColor = _getCategoryColorHex(category);
+                airport.riskReason = category;
+              }
+              return _buildAirportMarker(airport);
+            }).toList();
+          });
+        }
+      } catch (e) {
+        print("Error fetching flight categories: $e");
+      }
+    }
+  }
+
+  String _getCategoryColorHex(String category) {
+    switch (category.toUpperCase()) {
+      case 'VFR': return '#00FF00'; // Green
+      case 'MVFR': return '#0000FF'; // Blue
+      case 'IFR': return '#FF0000'; // Red
+      case 'LIFR': return '#800080'; // Purple
+      default: return '#808080'; // Gray
+    }
+  }
+
+  Marker _buildAirportMarker(Airport airport) {
+    Color markerColor = Colors.grey; // Default
+    
+    // Default Color Logic based on Type
+    if (airport.type == 'large_airport') {
+      markerColor = Colors.blue;
+    } else if (airport.type == 'medium_airport') {
+      markerColor = Colors.cyan;
+    }
+
+    // AI/Category Override
+    if (airport.riskColor != null) {
+      markerColor = _parseHexColor(airport.riskColor!);
+    }
+
+    return Marker(
+      point: LatLng(airport.lat, airport.lon),
+      width: 120, // Wide enough for label
+      height: 80,
+      child: GestureDetector(
+        onTap: () {
+          // Show details
+          showModalBottomSheet(
+            context: context,
+            backgroundColor: Colors.transparent,
+            isScrollControlled: true,
+            builder: (ctx) => AirportDetailSheet(
+              icao: airport.ident,
+              aiModel: _model,
+            ),
+          );
+        },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.local_airport, color: markerColor, size: 30),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black, // Opaque black for high contrast
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: markerColor, width: 1),
+              ),
+              child: Text(
+                airport.ident, // Strict ICAO Display
+                style: const TextStyle(
+                  color: Colors.white, 
+                  fontSize: 11, 
+                  fontWeight: FontWeight.w900, // Bold for readability
+                  fontFamily: 'monospace' // Monospace for technical look
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _parseHexColor(String hexString) {
+    try {
+      final buffer = StringBuffer();
+      if (hexString.length == 6 || hexString.length == 7) buffer.write('ff');
+      buffer.write(hexString.replaceFirst('#', ''));
+      return Color(int.parse(buffer.toString(), radix: 16));
+    } catch (e) {
+      return Colors.grey;
+    }
+  }
+
+  // --- End Airport Layer Logic ---
 
   Future<void> _analyzeTerrainRisks() async {
     if (_routePoints.isEmpty || _cruiseAltitudeFeet == null) {
@@ -252,15 +426,6 @@ class _DashBoardState extends State<DashBoard> {
     );
   }
 
-  // void _navigateToPreFlightPage() {
-  //   Navigator.push(
-  //     context,
-  //     MaterialPageRoute(
-  //       builder: (context) => PreFlightPage(onRouteParsed: _handleRouteImported),
-  //     ),
-  //   );
-  // }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -281,6 +446,7 @@ class _DashBoardState extends State<DashBoard> {
           routePoints: _routePoints,
           weatherPolygons: _displayedPolygons,
           mapController: _mapController,
+          onEmergencyStateChanged: widget.onEmergencyStateChanged,
         );
       case AppMode.preflight:
       default:
@@ -344,17 +510,19 @@ class _DashBoardState extends State<DashBoard> {
                   weatherPolygons: _displayedPolygons,
                   routePoints: _routePoints,
                   hazardMarkers: hazardMarkers,
+                  airportMarkers: _airportMarkers, // Pass markers here
                   onMapTap: _handleMapTap,
+                  aiModel: _model, // Pass AI model here
                 )),
-            // Preflightview(
-            //   mapController: _mapController,
-            //   onNavigateToPreFlight: _navigateToPreFlightPage,
-            // ),
 
             // Side Menu (Now includes Reset logic)
             CollapsibleLayerMenu(
               onToggleLayer: _toggleWeatherLayer,
-              isLayerActive: (type) => type == "Terrain" ? _showTerrainAnalysis : _activeLayers.containsKey(type),
+              isLayerActive: (type) {
+                if (type == "Terrain") return _showTerrainAnalysis;
+                if (type == "Airports") return _showAirports;
+                return _activeLayers.containsKey(type);
+              },
               showFullData: _showFullData,
               onToggleFullData: (val) => setState(() => _showFullData = val),
               topPosition: 160.0,
@@ -377,6 +545,8 @@ class _DashBoardState extends State<DashBoard> {
                   _activeLayers.clear();
                   _showTerrainAnalysis = false;
                   _preflightHazards.clear();
+                  _showAirports = false;
+                  _airportMarkers = []; 
                 });
                 _mapController.move(const LatLng(38.0, -98.0), 4.0);
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -412,58 +582,39 @@ class _DashBoardState extends State<DashBoard> {
   }
 
   void _handleMapTap(LatLng tappedPoint) {
-    // 1. Get only the features that are currently visible on the map.
+    // Logic handles tap on map
+    // ... same as before
     final visibleFeatures = _getVisibleFeatures();
     final List<WeatherFeature> hitFeatures = [];
 
-    // 2. Iterate ONLY through the visible features.
     for (final feature in visibleFeatures) {
-      // 3. Mathematical Check: Is the point inside this polygon?
       if (isPointInPolygon(tappedPoint, feature.polygon.points)) {
-        hitFeatures.add(feature); // Add to list (Collision detected!)
+        hitFeatures.add(feature);
       }
     }
 
-    // 4. Trigger AI if we hit any of the VISIBLE polygons.
     if (hitFeatures.isNotEmpty) {
-      print("⚡️ Tap Hit ${hitFeatures.length} layers. Triggering Co-Pilot...");
-      // Pass the full list (including overlaps) to Gemini
       _analyzeHazardsWithGemini(hitFeatures);
-    } else {
-      print("📍 Tap on clear airspace (No visible data found).");
     }
   }
 
-  /// Uses the robust Ray-Casting algorithm (also known as the Even-Odd Rule)
-  /// to accurately determine if a point is inside a polygon. This method is robust against concave polygons
-  /// and correctly handles edge cases, such as horizontal edges, which resolves the previous inconsistency.
+  /// Uses the robust Ray-Casting algorithm
   bool isPointInPolygon(LatLng point, List<LatLng> polygonPoints) {
     bool isInside = false;
     final double pointLat = point.latitude;
     final double pointLon = point.longitude;
 
-    // We iterate through each edge of the polygon. `j` is the previous vertex to `i`.
-    // The polygon is pre-closed by the parsing logic (first point == last point), so we
-    // can iterate up to the second-to-last vertex.
     for (int i = 0, j = polygonPoints.length - 2; i < polygonPoints.length - 1; j = i++) {
       final double vertILat = polygonPoints[i].latitude;
       final double vertILon = polygonPoints[i].longitude;
       final double vertJLat = polygonPoints[j].latitude;
       final double vertJLon = polygonPoints[j].longitude;
 
-      // Check if the edge straddles the horizontal ray at the point's latitude.
-      // This is the core of the algorithm.
       final bool crossesLatitude = (vertILat > pointLat) != (vertJLat > pointLat);
 
       if (crossesLatitude) {
-        // If it crosses, we calculate the longitude of the intersection point.
-        // This is derived from the line equation. Division by zero is impossible here
-        // because `crossesLatitude` is only true if `vertILat` and `vertJLat` are different.
         final double intersectionLon = (vertJLon - vertILon) * (pointLat - vertILat) / (vertJLat - vertILat) + vertILon;
-
-        // A valid crossing occurs if the intersection point is to the right of the tap point.
         if (pointLon < intersectionLon) {
-          // Each crossing flips the state from inside to outside or vice versa.
           isInside = !isInside;
         }
       }
@@ -474,7 +625,6 @@ class _DashBoardState extends State<DashBoard> {
 
   /// Triggers the AI analysis and displays the result in a bottom sheet.
   Future<void> _analyzeHazardsWithGemini(List<WeatherFeature> features) async {
-    // Show a loading modal immediately
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -548,11 +698,9 @@ class _DashBoardState extends State<DashBoard> {
       return "AI model not initialized. Please add your Gemini API key.";
     }
 
-    // 1. Prepare the data for the AI
     final rawData = features.map((f) => f.rawProperties).toList();
     final jsonData = jsonEncode(rawData);
 
-    // 2. Create the prompt
     final prompt = """
     You are a flight safety Co-Pilot. The user tapped a location with these weather hazards: $jsonData. Analyze the Severity, Cloud Tops/Bases, and give a tactical recommendation. Be concise.
     """;
@@ -672,39 +820,42 @@ class _DashBoardState extends State<DashBoard> {
   Future<void> _toggleWeatherLayer(String type) async {
     // 1) Terrain toggle
     if (type == "Terrain") {
-      // Compute next state BEFORE setState so we can safely use it afterward.
       final bool enableTerrain = !_showTerrainAnalysis;
-
       setState(() {
         _showTerrainAnalysis = enableTerrain;
-
-        // If terrain turned off, clear hazards immediately.
         if (!_showTerrainAnalysis) {
           _preflightHazards.clear();
         }
       });
-
-      // Run analysis after UI updates.
       if (enableTerrain) {
         await _analyzeTerrainRisks();
       }
       return;
     }
 
-    // 2) Weather layer toggle (optimistic UI update)
+    // 2) Airport Toggle (New)
+    if (type == "Airports") {
+      setState(() {
+        _showAirports = !_showAirports;
+        if (!_showAirports) _airportMarkers = [];
+      });
+      if (_showAirports) {
+        await _updateVisibleAirports();
+      }
+      return;
+    }
+
+    // 3) Weather layer toggle
     bool shouldFetch = false;
     setState(() {
       if (_activeLayers.containsKey(type)) {
-        // Turn OFF immediately
         _activeLayers.remove(type);
       } else {
-        // Turn ON immediately (button colors update right away)
         _activeLayers[type] = [];
         shouldFetch = true;
       }
     });
 
-    // Fetch in background (after state update)
     if (shouldFetch) {
       await _fetchWeatherData(type);
     }

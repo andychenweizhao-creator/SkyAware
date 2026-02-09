@@ -14,7 +14,7 @@ class OpenMeteoService {
     required double lon,
     required double altitudeFt, // User's GPS Altitude
     bool forceSurface = false, // Allow forcing surface mode
-    String timezone = 'UTC', // Default to UTC for data, handled locally
+    String timezone = 'auto', // Default to auto to get correct local offset
   }) async {
     try {
       // 1. Dynamic Units - Always Metric
@@ -74,6 +74,9 @@ class OpenMeteoService {
         final current = data['current'];
         final hourly = data['hourly'];
         
+        // Get UTC Offset
+        int utcOffsetSeconds = (data['utc_offset_seconds'] as num?)?.toInt() ?? 0;
+        
         // Elevation Handling
         double surfaceElevM = (data['elevation'] as num).toDouble();
         double surfaceElevFt = AviationMath.metersToFeet(surfaceElevM);
@@ -102,7 +105,10 @@ class OpenMeteoService {
         
         try {
            String currentTimeStr = current['time']; 
-           DateTime currentDt = DateTime.parse(currentTimeStr); // Since timezone=UTC, this is UTC
+           DateTime currentDt = DateTime.parse(currentTimeStr); 
+           // Note: Since timezone=auto, currentDt is essentially the local time at the location
+           // but without offset info in string, parse() treats it as local device time or unstated.
+           // However, hourly times also follow the same timezone, so string matching works fine.
            
            if (hourly != null && hourly['time'] != null) {
               List<dynamic> times = hourly['time'];
@@ -288,12 +294,12 @@ class OpenMeteoService {
         }
 
         // --- Sunrise/Sunset (LOCAL CALCULATION - NO API DEPENDENCY) ---
-        // Uses AviationWeatherCalculator (sunrise_sunset_calc) which relies on 
-        // device's DateTime.now() timezone offset to return Local Times.
+        // Uses AviationWeatherCalculator (sunrise_sunset_calc)
+        // We use UTC date to calculate UTC sunrise/sunset
         final sunTimes = AviationMath.calculateRawSunriseSunset(
           lat: lat,
           lon: lon,
-          date: DateTime.now(),
+          date: DateTime.now().toUtc(), 
         );
 
         // --- Dynamic Background Engine ---
@@ -306,16 +312,18 @@ class OpenMeteoService {
         
         // Proximity Check for Sunrise/Sunset Background Visuals
         if (sunTimes.sunrise != null && sunTimes.sunset != null) {
-          DateTime sr = sunTimes.sunrise!;
-          DateTime ss = sunTimes.sunset!;
+          // Compare against UTC now since sunrise/sunset are UTC
+          DateTime nowUtc = now.toUtc();
+          DateTime sr = sunTimes.sunrise!; // UTC
+          DateTime ss = sunTimes.sunset!; // UTC
           DateTime srStart = sr.subtract(Duration(minutes: 30));
           DateTime srEnd = sr.add(Duration(minutes: 30));
           DateTime ssStart = ss.subtract(Duration(minutes: 30));
           DateTime ssEnd = ss.add(Duration(minutes: 30));
 
-          if (now.isAfter(srStart) && now.isBefore(srEnd)) {
+          if (nowUtc.isAfter(srStart) && nowUtc.isBefore(srEnd)) {
             timePhase = "sunrise";
-          } else if (now.isAfter(ssStart) && now.isBefore(ssEnd)) {
+          } else if (nowUtc.isAfter(ssStart) && nowUtc.isBefore(ssEnd)) {
             timePhase = "sunset";
           }
         }
@@ -383,11 +391,12 @@ class OpenMeteoService {
           locationName: locationName,
           isInterpolated: true,
           precip: precipValMm, // Metric (mm)
-          sunrise: sunTimes.sunrise,
-          sunset: sunTimes.sunset,
+          sunrise: sunTimes.sunrise, // UTC
+          sunset: sunTimes.sunset, // UTC
           backgroundState: backgroundState,
           isDay: isDay,
           cloudOpacity: cloudOpacity,
+          utcOffsetSeconds: utcOffsetSeconds,
         );
 
       } else {

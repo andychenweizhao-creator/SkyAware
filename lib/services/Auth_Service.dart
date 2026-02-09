@@ -10,7 +10,8 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  // Use the singleton instance for google_sign_in ^7.0.0
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
@@ -106,13 +107,17 @@ class AuthService {
   // Sign In with Google
   Future<User?> signInWithGoogle() async {
     try {
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) return null;
-
+      // Initialize if needed, though usually handled by the plugin.
+      // With google_sign_in 7.x, we use authenticate()
+      final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
+      
       final GoogleSignInAuthentication googleAuth = await googleUser
           .authentication;
+      
+      // Note: accessToken is no longer available in GoogleSignInAuthentication in v7
+      // We rely on idToken.
       final AuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
+        accessToken: null, 
         idToken: googleAuth.idToken,
       );
 
@@ -125,7 +130,8 @@ class AuthService {
 
       return result.user;
     } catch (e) {
-      rethrow;
+      print("Error signing in with Google: $e");
+      return null;
     }
   }
    Future<User?> signInWithApple() async {

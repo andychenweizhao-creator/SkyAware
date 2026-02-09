@@ -165,13 +165,14 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      _buildToggle("Airports", Colors.white), // Added Airports Toggle
                       _buildToggle("CONV", Colors.red),
                       _buildToggle("TURB", Colors.orange),
                       _buildToggle("ICE", Colors.blue),
                       _buildToggle("IFR", Colors.purple),
                       _buildToggle("MTN OBS", Colors.brown),
                       _buildToggle("LLWS", Colors.amber),
-                      _buildToggle("Terrain", Colors.green), // Special Terrain Toggle
+                      _buildToggle("Terrain", Colors.green),
                     ],
                   ),
                 ),

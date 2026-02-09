@@ -14,6 +14,12 @@ import 'Maps/maps.dart';
 import 'WeatherFeature.dart';
 import '../../services/terrain_service.dart';
 import 'CollapsibleLayerMenu.dart';
+import '../../services/airport_database_service.dart'; // Local DB
+import '../../services/ai_grading_service.dart'; // AI Grading
+import '../../UI/AppAnimations.dart';
+import '../../UI/AirportDetailSheet.dart';
+import '../../services/ai_emergency_service.dart';
+import '../../UI/EmergencyOverlay.dart';
 
 class HazardInfo {
   final LatLng point;
@@ -27,6 +33,7 @@ class InFlightView extends StatefulWidget {
   final List<RoutePoint> routePoints;
   final List<Polygon> weatherPolygons;
   final MapController? mapController;
+  final ValueChanged<bool>? onEmergencyStateChanged;
 
   const InFlightView({
     super.key,
@@ -34,6 +41,7 @@ class InFlightView extends StatefulWidget {
     this.routePoints = const [],
     this.weatherPolygons = const [],
     this.mapController,
+    this.onEmergencyStateChanged,
   });
 
   @override
@@ -60,14 +68,27 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   AnimationController? _flashController;
   Timer? _mapDebounce;
 
+  // Airport Layer State
+  bool _showAirports = false;
+  List<Marker> _airportMarkers = [];
+
+  // EMERGENCY STATE
+  bool _isEmergencyMode = false;
+  Map<String, dynamic>? _emergencyData;
+  List<LatLng> _emergencyRoute = [];
+
   @override
   void initState() {
     super.initState();
     if (_kGeminiApiKey.isNotEmpty && _kGeminiApiKey != 'YOUR_GEMINI_API_KEY') {
-      _model = GenerativeModel(
-        model: 'gemini-3-pro-preview',
-        apiKey: _kGeminiApiKey,
-      );
+      try {
+        _model = GenerativeModel(
+          model: 'gemini-3-pro-preview',
+          apiKey: _kGeminiApiKey,
+        );
+      } catch (e) {
+        print("Gemini Init Error: $e");
+      }
     }
     
     // Setup Flashing Animation
@@ -81,12 +102,286 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
 
   @override
   void dispose() {
+    // Ensure nav bar is restored if view is disposed while in emergency
+    if (_isEmergencyMode) {
+      widget.onEmergencyStateChanged?.call(false);
+    }
     _positionStream?.cancel();
     _flashController?.dispose();
     _mapDebounce?.cancel();
     _altitudeController.dispose();
     super.dispose();
   }
+
+  Future<void> _startEmergencyFlow() async {
+    if (_model == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("AI Unavailable")));
+      return;
+    }
+
+    String aircraftType = "Cessna 172S"; // Default
+    String emergencyType = "Engine Failure"; // Default
+    String customEmergencyText = "";
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        String tempAircraft = aircraftType;
+        String tempEmergency = emergencyType;
+        bool isCustom = false;
+        
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: Colors.red[900],
+              title: const Text("DECLARE EMERGENCY", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      decoration: const InputDecoration(
+                        labelText: "Aircraft Type",
+                        labelStyle: TextStyle(color: Colors.white70),
+                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+                        focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white, width: 2)),
+                      ),
+                      style: const TextStyle(color: Colors.white),
+                      controller: TextEditingController(text: tempAircraft),
+                      onChanged: (v) => tempAircraft = v,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: tempEmergency,
+                      dropdownColor: Colors.red[800],
+                      style: const TextStyle(color: Colors.white),
+                      items: ["Engine Failure", "Electrical Fire", "Medical", "Lost Comms", "Fuel Critical", "Other / Custom"]
+                          .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                      onChanged: (v) {
+                        setState(() {
+                          tempEmergency = v!;
+                          isCustom = v == "Other / Custom";
+                        });
+                      },
+                      decoration: const InputDecoration(
+                        labelText: "Emergency Type",
+                        labelStyle: TextStyle(color: Colors.white70),
+                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+                      ),
+                    ),
+                    if (isCustom)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: TextField(
+                          decoration: const InputDecoration(
+                            labelText: "Specify Emergency",
+                            labelStyle: TextStyle(color: Colors.white70),
+                            hintText: "e.g. Bird Strike",
+                            hintStyle: TextStyle(color: Colors.white30),
+                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+                            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white, width: 2)),
+                          ),
+                          style: const TextStyle(color: Colors.white),
+                          onChanged: (v) => customEmergencyText = v,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context), 
+                  child: const Text("CANCEL", style: TextStyle(color: Colors.white70))
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.red),
+                  onPressed: () {
+                    aircraftType = tempAircraft;
+                    emergencyType = isCustom ? customEmergencyText : tempEmergency;
+                    
+                    if (emergencyType.trim().isEmpty) {
+                      emergencyType = "Unknown Emergency";
+                    }
+                    
+                    Navigator.pop(context);
+                    _processEmergency(aircraftType, emergencyType);
+                  },
+                  child: const Text("DECLARE NOW", style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          }
+        );
+      },
+    );
+  }
+
+  Future<void> _processEmergency(String acType, String emType) async {
+    if (_currentPosition == null) return;
+
+    try {
+      final data = await AiEmergencyService.findBestEmergencyLanding(
+        lat: _currentPosition!.latitude,
+        lon: _currentPosition!.longitude,
+        alt: _currentAltitudeFeet ?? 0,
+        aircraftType: acType,
+        emergencyType: emType,
+        model: _model!,
+      );
+
+      final airport = data['recommended_airport'];
+      if (airport != null) {
+        final destLat = (airport['lat'] as num).toDouble();
+        final destLon = (airport['lon'] as num).toDouble();
+        
+        // Parse route if available
+        List<LatLng> routePoints = [];
+        if (data.containsKey('route') && data['route'] is List) {
+          for (var pt in data['route']) {
+            if (pt['lat'] != null && pt['lon'] != null) {
+              routePoints.add(LatLng((pt['lat'] as num).toDouble(), (pt['lon'] as num).toDouble()));
+            }
+          }
+        }
+        
+        // Fallback to direct line if no route returned or less than 2 points
+        if (routePoints.length < 2) {
+             routePoints = [
+                LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                LatLng(destLat, destLon)
+             ];
+        }
+
+        setState(() {
+          _isEmergencyMode = true;
+          _emergencyData = data;
+          _emergencyRoute = routePoints;
+        });
+        
+        // Hide Nav Bar
+        widget.onEmergencyStateChanged?.call(true);
+
+        // Zoom map to show path
+        widget.mapController?.fitCamera(
+          CameraFit.bounds(
+            bounds: LatLngBounds.fromPoints(_emergencyRoute),
+            padding: const EdgeInsets.all(50),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Emergency Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to calculate emergency plan: $e")));
+      }
+    }
+  }
+
+  Color _parseHexColor(String hexString) {
+    try {
+      final buffer = StringBuffer();
+      if (hexString.length == 6 || hexString.length == 7) buffer.write('ff');
+      buffer.write(hexString.replaceFirst('#', ''));
+      return Color(int.parse(buffer.toString(), radix: 16));
+    } catch (e) {
+      return Colors.grey;
+    }
+  }
+
+  // --- NEW AIRPORT LOGIC ---
+
+  Future<void> _updateAirportLayer() async {
+    if (!_showAirports) return;
+
+    // 1. Get Visible Bounds
+    final bounds = widget.mapController?.camera.visibleBounds;
+    if (bounds == null) return;
+
+    // 2. Query Local Database
+    final visibleAirports = AirportDatabaseService().getAirportsInBounds(bounds);
+    
+    // Limit to reasonable number
+    final limitedAirports = visibleAirports.take(20).toList();
+
+    // 3. Render Initial Markers (Instant)
+    if (mounted) {
+      setState(() {
+        _airportMarkers = limitedAirports.map((airport) => _buildAirportMarker(airport)).toList();
+      });
+    }
+
+    // 4. Call AI Grading (Async)
+    if (_model != null && limitedAirports.isNotEmpty) {
+      try {
+        final grades = await AiGradingService.gradeAirports(limitedAirports, _model!);
+        
+        if (mounted && _showAirports) {
+          setState(() {
+            _airportMarkers = limitedAirports.map((airport) {
+              if (grades.containsKey(airport.ident)) {
+                airport.riskColor = grades[airport.ident]!['color'];
+                airport.riskReason = grades[airport.ident]!['reason'];
+              }
+              return _buildAirportMarker(airport);
+            }).toList();
+          });
+        }
+      } catch (e) {
+        print("AI Grading Error: $e");
+      }
+    }
+  }
+
+  Marker _buildAirportMarker(Airport airport) {
+    Color markerColor = Colors.grey;
+    if (airport.type == 'large_airport') markerColor = Colors.blue;
+    else if (airport.type == 'medium_airport') markerColor = Colors.cyan;
+    
+    if (airport.riskColor != null) {
+      markerColor = _parseHexColor(airport.riskColor!);
+    }
+
+    return Marker(
+      point: LatLng(airport.lat, airport.lon),
+      width: 120,
+      height: 80,
+      child: GestureDetector(
+        onTap: () {
+          showModalBottomSheet(
+            context: context,
+            backgroundColor: Colors.transparent,
+            isScrollControlled: true,
+            builder: (ctx) => AirportDetailSheet(
+              icao: airport.ident,
+              aiModel: _model,
+            ),
+          );
+        },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.local_airport, color: markerColor, size: 30),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: markerColor, width: 1),
+              ),
+              child: Text(
+                airport.ident,
+                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- END NEW AIRPORT LOGIC ---
 
   Future<void> _initLocationService() async {
     bool serviceEnabled;
@@ -382,6 +677,18 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
       });
       return;
     }
+    
+    // NEW: Airport Toggle
+    if (type == "Airports") {
+      setState(() {
+        _showAirports = !_showAirports;
+        if (!_showAirports) _airportMarkers = [];
+      });
+      if (_showAirports) {
+        _updateAirportLayer();
+      }
+      return;
+    }
 
     if (_activeLayers.containsKey(type)) {
       setState(() {
@@ -649,6 +956,35 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   }
 
   Widget _buildStatusPill() {
+    // IF EMERGENCY IS ACTIVE, SHOW RED STATUS
+    if (_isEmergencyMode) {
+      return AnimatedBuilder(
+        animation: _flashController!,
+        builder: (context, child) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(30),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Color.lerp(Colors.red[900], Colors.red, _flashController!.value),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(color: Colors.white),
+                boxShadow: const [BoxShadow(color: Colors.red, blurRadius: 15)],
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
+                  SizedBox(width: 8),
+                  Text("EMERGENCY", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+                ],
+              ),
+            ),
+          );
+        }
+      );
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(30),
       child: BackdropFilter(
@@ -860,9 +1196,16 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
                   _mapDebounce?.cancel();
                   _mapDebounce = Timer(const Duration(milliseconds: 500), () {
                     if (!mounted) return;
+                    
+                    // Terrain Check
                     if (_currentPosition != null && _currentAltitudeFeet != null && _showTerrainAnalysis) {
                       final planePos = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
                       _scanTerrainSurroundings(planePos, _currentAltitudeFeet!);
+                    }
+                    
+                    // NEW: Airport Check
+                    if (_showAirports) {
+                      _updateAirportLayer();
                     }
                   });
                 }
@@ -881,14 +1224,29 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
 
               // Draw the flight route on top of the weather
               if (widget.routePoints.isNotEmpty)
-                PolylineLayer(
+                PolylineLayer<Object>(
                   polylines: [
-                    Polyline(
+                    Polyline<Object>(
                       points: widget.routePoints.map((rp) => rp.point).toList(),
                       strokeWidth: 4.0,
                       color: Colors.blueAccent, // High-visibility color
                       borderColor: Colors.black.withOpacity(0.5),
                       borderStrokeWidth: 1.0,
+                    ),
+                  ],
+                ),
+              
+              // NEW: EMERGENCY ROUTE LAYER (RED)
+              if (_isEmergencyMode && _emergencyRoute.isNotEmpty)
+                PolylineLayer<Object>(
+                  polylines: [
+                    Polyline<Object>(
+                      points: _emergencyRoute,
+                      strokeWidth: 6.0,
+                      color: Colors.redAccent,
+                      borderColor: Colors.black,
+                      borderStrokeWidth: 2.0,
+                      pattern: const StrokePattern.dotted(),
                     ),
                   ],
                 ),
@@ -976,6 +1334,10 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
                     ),
                   )).toList(),
                 ),
+
+              // AI Airport Markers Layer
+              if (_airportMarkers.isNotEmpty)
+                MarkerLayer(markers: _airportMarkers),
             ],
           ),
           // Vignette for cockpit feel
@@ -994,12 +1356,35 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
           
           // --- NEW MODERN HUD LAYOUT ---
           
-          // 1. Top-Left Back Button
-          Positioned(
-            top: 60, 
-            left: 16,
-            child: _buildBackButton(),
-          ),
+          // 1. Top-Left Back Button (OR MAYDAY BUTTON)
+          if (!_isEmergencyMode)
+            Positioned(
+              top: 60, 
+              left: 16,
+              child: _buildBackButton(),
+            ),
+          
+          // NEW: MAYDAY BUTTON (Next to back button)
+          if (!_isEmergencyMode)
+            Positioned(
+              top: 60,
+              left: 70, // Offset from back button
+              child: GestureDetector(
+                onTap: _startEmergencyFlow,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(color: Colors.red.withOpacity(0.6), blurRadius: 10, spreadRadius: 2)
+                    ],
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: const Text("MAYDAY", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                ),
+              ),
+            ),
 
           // 2. Top-Center Status
           Positioned(
@@ -1017,33 +1402,62 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
           ),
 
           // 4. Side Menu (Moved down to clear HUD)
-          CollapsibleLayerMenu(
-            onToggleLayer: _toggleWeatherLayer,
-            isLayerActive: (type) => type == "Terrain" ? _showTerrainAnalysis : _activeLayers.containsKey(type),
-            showFullData: _showFullData,
-            onToggleFullData: (val) => setState(() => _showFullData = val),
-            topPosition: 160.0,
-            altitudeController: _altitudeController,
-            altitude: _currentAltitudeFeet?.toInt(),
-            onAltitudeChanged: (val) {
-              // No-op for InFlightView as it is GPS driven
-            },
-            onReset: () {
-              setState(() {
-                _activeLayers.clear();
-                _showTerrainAnalysis = false;
-                _activeHazards = [];
-                _showFullData = false;
-              });
-            },
-          ),
+          if (!_isEmergencyMode)
+            CollapsibleLayerMenu(
+              onToggleLayer: _toggleWeatherLayer,
+              isLayerActive: (type) => (type == "Terrain" ? _showTerrainAnalysis : (type == "Airports" ? _showAirports : _activeLayers.containsKey(type))),
+              showFullData: _showFullData,
+              onToggleFullData: (val) => setState(() => _showFullData = val),
+              topPosition: 160.0,
+              altitudeController: _altitudeController,
+              altitude: _currentAltitudeFeet?.toInt(),
+              onAltitudeChanged: (val) {
+                // No-op for InFlightView as it is GPS driven
+              },
+              onReset: () {
+                setState(() {
+                  _activeLayers.clear();
+                  _showTerrainAnalysis = false;
+                  _activeHazards = [];
+                  _showFullData = false;
+                  _showAirports = false;
+                  _airportMarkers = []; 
+                  _isEmergencyMode = false; // Reset emergency
+                  _emergencyData = null;
+                  _emergencyRoute = [];
+                });
+                widget.onEmergencyStateChanged?.call(false); // Reset nav bar
+              },
+            ),
           
           // 5. Zoom Controls (Bottom Right)
-          Positioned(
-            right: 16,
-            top: MediaQuery.of(context).size.height / 2 - 60,
-            child: _buildZoomControls(),
-          ),
+          if (!_isEmergencyMode)
+            Positioned(
+              right: 16,
+              top: MediaQuery.of(context).size.height / 2 - 60,
+              child: _buildZoomControls(),
+            ),
+          
+          // 6. EMERGENCY OVERLAY (Highest z-index)
+          if (_isEmergencyMode && _emergencyData != null)
+            Positioned(
+              left: 0, 
+              right: 0, 
+              top: 0, 
+              bottom: 0,
+              child: EmergencyOverlay(
+                data: _emergencyData!,
+                onClose: () {
+                  setState(() {
+                    _isEmergencyMode = false;
+                    _emergencyData = null;
+                    _emergencyRoute = [];
+                  });
+                  // Restore Nav Bar
+                  widget.onEmergencyStateChanged?.call(false);
+                },
+              ),
+            ),
         ],
       ),
     );

@@ -26,6 +26,7 @@ class WeatherModel {
   final String backgroundState;
   final bool isDay;
   final double cloudOpacity;
+  final int utcOffsetSeconds; // Offset from UTC in seconds
 
   WeatherModel({
     required this.temperature,
@@ -52,6 +53,7 @@ class WeatherModel {
     this.backgroundState = "day_clear",
     this.isDay = true,
     this.cloudOpacity = 0.0,
+    this.utcOffsetSeconds = 0,
   });
 
   @override

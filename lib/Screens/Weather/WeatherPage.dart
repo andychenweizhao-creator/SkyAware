@@ -453,21 +453,18 @@ class _WeatherPageState extends State<WeatherPage> {
     // Sunrise / Sunset
     String sunDisplay = "--";
     if (_weatherData?.sunrise != null && _weatherData?.sunset != null) {
-       String formatTime(DateTime dt, {bool isZulu = false}) {
-          // Format as HH:mm
-          return DateFormat('HH:mm').format(dt);
-       }
+       String formatTime(DateTime dt) => DateFormat('HH:mm').format(dt);
        
-       // Using calculated dates (Local to Device)
-       DateTime srLocal = _weatherData!.sunrise!;
-       DateTime ssLocal = _weatherData!.sunset!;
+       // Force UTC baseline
+       DateTime srUtc = _weatherData!.sunrise!.isUtc ? _weatherData!.sunrise! : _weatherData!.sunrise!.toUtc();
+       DateTime ssUtc = _weatherData!.sunset!.isUtc ? _weatherData!.sunset! : _weatherData!.sunset!.toUtc();
        
-       // Convert to Zulu
-       DateTime srZulu = srLocal.toUtc();
-       DateTime ssZulu = ssLocal.toUtc();
+       // Calculate Location Local Time using offset from API
+       DateTime srLocationLocal = srUtc.add(Duration(seconds: _weatherData!.utcOffsetSeconds));
+       DateTime ssLocationLocal = ssUtc.add(Duration(seconds: _weatherData!.utcOffsetSeconds));
        
-       sunDisplay = "SR ${formatTime(srLocal)} L / ${formatTime(srZulu)} Z\n"
-                    "SS ${formatTime(ssLocal)} L / ${formatTime(ssZulu)} Z";
+       sunDisplay = "SR ${formatTime(srLocationLocal)} L / ${formatTime(srUtc)} Z\n"
+                    "SS ${formatTime(ssLocationLocal)} L / ${formatTime(ssUtc)} Z";
     }
 
     return Padding(
@@ -504,10 +501,10 @@ class _WeatherPageState extends State<WeatherPage> {
           ),
           _buildStaggeredTile(
             index: 5,
-            title: "DENSITY ALT",
-            value: densityAltDisplay,
-            icon: Icons.compress,
-            isAlert: (_weatherData?.densityAltitude ?? 0) > (_weatherData?.altitudeFt ?? 0) + 2000,
+            title: "CEILING / PRECIP",
+            value: ceilingDisplay,
+            icon: Icons.cloud_outlined,
+            subtitle: "Precip: $precipDisplay",
           ),
            _buildStaggeredTile(
              index: 6,
@@ -530,10 +527,10 @@ class _WeatherPageState extends State<WeatherPage> {
           ),
           _buildStaggeredTile(
             index: 9,
-            title: "CEILING / PRECIP",
-            value: ceilingDisplay,
-            icon: Icons.cloud_outlined,
-            subtitle: "Precip: $precipDisplay",
+            title: "DENSITY ALT",
+            value: densityAltDisplay,
+            icon: Icons.compress,
+            isAlert: (_weatherData?.densityAltitude ?? 0) > (_weatherData?.altitudeFt ?? 0) + 2000,
           ),
         ],
       ),
