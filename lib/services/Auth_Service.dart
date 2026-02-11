@@ -110,19 +110,17 @@ class AuthService {
       // Initialize if needed, though usually handled by the plugin.
       // With google_sign_in 7.x, we use authenticate()
       final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
-      
-      final GoogleSignInAuthentication googleAuth = await googleUser
-          .authentication;
-      
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
       // Note: accessToken is no longer available in GoogleSignInAuthentication in v7
       // We rely on idToken.
-      final AuthCredential credential = GoogleAuthProvider.credential(
+      final AuthCredential credentials = GoogleAuthProvider.credential(
         accessToken: null, 
         idToken: googleAuth.idToken,
       );
 
-      final UserCredential result = await _auth.signInWithCredential(
-          credential);
+      final UserCredential result = await _auth.signInWithCredential(credentials);
 
       if (result.user != null) {
         await _saveUserToFirestore(result.user!);
@@ -134,6 +132,7 @@ class AuthService {
       return null;
     }
   }
+
    Future<User?> signInWithApple() async {
     if(!Platform.isIOS) return null;
     try {

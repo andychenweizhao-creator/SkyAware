@@ -1138,6 +1138,9 @@ class _DashBoardState extends State<DashBoard> {
                 );
               },
             ),
+            
+            // Left-Side Locate Button (New)
+
 
             // Left-Side Import Button
             Positioned(
@@ -1166,6 +1169,9 @@ class _DashBoardState extends State<DashBoard> {
         );
     }
   }
+
+  // --- NEW: Nearest Airports Logic ---
+
 
   void _handleMapTap(LatLng tappedPoint) {
     // Logic handles tap on map
@@ -1710,6 +1716,42 @@ class _GlassImportButton extends StatelessWidget {
               border: Border.all(color: Colors.white.withOpacity(0.2)),
             ),
             child: const Icon(Icons.upload_file, color: Colors.white, size: 28),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassLocateButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _GlassLocateButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(30),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: const Color.fromRGBO(30, 30, 30, 0.8), // rgba(30,30,30,0.8)
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withOpacity(0.2), width: 1), // Subtle 1px border
+              boxShadow: [
+                 BoxShadow(
+                   color: Colors.black.withOpacity(0.3),
+                   blurRadius: 10,
+                   spreadRadius: 2,
+                 )
+              ]
+            ),
+            child: const Icon(Icons.gps_fixed, color: Colors.greenAccent, size: 24), // Crosshair icon
           ),
         ),
       ),

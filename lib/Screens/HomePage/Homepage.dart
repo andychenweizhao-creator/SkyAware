@@ -14,7 +14,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../UI/AppAnimations.dart';
 import '../../services/unit_settings_service.dart';
-// import '../../services/ai_airport_service.dart'; // Removed to be self-contained
+import '../../services/weather_service.dart'; // Added WeatherService
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -61,9 +61,9 @@ class _HomePageState extends State<HomePage> {
   Timer? _weatherTimer;
 
   // New Local Search State
-  List<Map<String, dynamic>> _foundAirports = [];
-  bool _isSearchingAirports = false;
-  String? _cachedDatabaseContent;
+  // List<Map<String, dynamic>> _foundAirports = []; // Moved to Sheet Widget
+  // bool _isSearchingAirports = false; // Moved to Sheet Widget
+  String? _cachedDatabaseContent; // Kept for caching
 
   @override
   void initState() {
@@ -115,14 +115,11 @@ class _HomePageState extends State<HomePage> {
   Future<void> _updateNearestAirport() async {
     if (_lat == null || _lon == null) return;
 
-    if (mounted) setState(() => _isSearchingAirports = true);
-
     if (_cachedDatabaseContent == null) {
       try {
         _cachedDatabaseContent = await rootBundle.loadString('assets/GlobalAirportDatabase.txt');
       } catch (e) {
         debugPrint("Error loading DB: $e");
-        if (mounted) setState(() => _isSearchingAirports = false);
         return;
       }
     }
@@ -139,9 +136,6 @@ class _HomePageState extends State<HomePage> {
       
       if (mounted) {
         setState(() {
-          _foundAirports = results;
-          _isSearchingAirports = false;
-          
           if (results.isNotEmpty) {
             _nearestAirportIcao = results.first['icao'];
             _nearestAirportDist = results.first['distance'];
@@ -155,7 +149,6 @@ class _HomePageState extends State<HomePage> {
       }
     } catch (e) {
       debugPrint("Compute error in Homepage: $e");
-      if (mounted) setState(() => _isSearchingAirports = false);
     }
   }
 
@@ -197,161 +190,19 @@ class _HomePageState extends State<HomePage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final theme = Theme.of(context);
-        final isDark = theme.brightness == Brightness.dark;
-
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.85,
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 20)],
-              ),
-              child: Column(
-                children: [
-                   // Handle
-                   Center(
-                     child: Container(
-                       width: 40, height: 4, 
-                       margin: const EdgeInsets.symmetric(vertical: 12), 
-                       decoration: BoxDecoration(color: Colors.grey.withOpacity(0.5), borderRadius: BorderRadius.circular(2))
-                     )
-                   ),
-                   
-                   // Title & Radius Selector
-                   Padding(
-                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                     child: Column(
-                       crossAxisAlignment: CrossAxisAlignment.start,
-                       children: [
-                         Row(
-                           children: [
-                             Icon(Icons.radar, color: theme.primaryColor),
-                             const SizedBox(width: 8),
-                             Text("Nearby Airports", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
-                           ],
-                         ),
-                         const SizedBox(height: 16),
-                         SingleChildScrollView(
-                           scrollDirection: Axis.horizontal,
-                           child: Row(
-                             children: [10, 25, 50, 100].map((r) {
-                                final isSelected = _searchRadius == r;
-                                return Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: ChoiceChip(
-                                    label: Text("$r nm"),
-                                    labelStyle: TextStyle(
-                                      color: isSelected ? Colors.white : theme.colorScheme.onSurface,
-                                      fontWeight: FontWeight.bold
-                                    ),
-                                    selected: isSelected,
-                                    selectedColor: theme.primaryColor,
-                                    backgroundColor: theme.cardColor,
-                                    onSelected: (val) {
-                                       if (val) {
-                                         setState(() { 
-                                           _searchRadius = r;
-                                         });
-                                         setSheetState(() {});
-                                         _updateNearestAirport().then((_) {
-                                            if (context.mounted) setSheetState(() {});
-                                         });
-                                       }
-                                    },
-                                  ),
-                                );
-                             }).toList(),
-                           ),
-                         ),
-                       ],
-                     ),
-                   ),
-                   const Divider(),
-                   
-                   // List Content
-                   Expanded(
-                      child: _isSearchingAirports 
-                        ? Center(child: CircularProgressIndicator(color: theme.primaryColor))
-                        : _foundAirports.isEmpty 
-                          ? Center(child: Text("No airports found within ${_searchRadius}nm.", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5))))
-                          : ListView.builder(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              itemCount: _foundAirports.length,
-                              itemBuilder: (context, index) {
-                                 final apt = _foundAirports[index];
-                                 final double dist = apt['distance'];
-                                 
-                                 return InkWell(
-                                    onTap: () {
-                                      Navigator.pop(context);
-                                      setState(() { 
-                                         _currentAirportCode = apt['icao'];
-                                         _searchController.text = apt['icao'];
-                                      });
-                                      _fetchMetarData();
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                      child: Row(
-                                        children: [
-                                          // Distance
-                                          SizedBox(
-                                            width: 60,
-                                            child: Text(
-                                              "${dist.toStringAsFixed(1)} nm",
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.bold,
-                                                color: theme.primaryColor,
-                                              ),
-                                            ),
-                                          ),
-                                          // Info
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  apt['icao'],
-                                                  style: TextStyle(
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: theme.colorScheme.onSurface,
-                                                  ),
-                                                ),
-                                                Text(
-                                                  apt['name'],
-                                                  style: TextStyle(
-                                                    fontSize: 14,
-                                                    color: theme.colorScheme.onSurface.withOpacity(0.6),
-                                                  ),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          // Badge Placeholder
-                                          // We don't have cat for all, only nearest.
-                                          const SizedBox(width: 8),
-                                          Icon(Icons.chevron_right, color: theme.colorScheme.onSurface.withOpacity(0.3), size: 18),
-                                        ],
-                                      ),
-                                    ),
-                                 );
-                              },
-                          )
-                   )
-                ],
-              ),
-            );
-          }
-        );
-      }
+      builder: (ctx) => NearestAirportsSheet(
+        userLat: _lat!,
+        userLon: _lon!,
+        initialRadius: _searchRadius,
+        onAirportSelected: (icao) {
+          Navigator.pop(ctx);
+          setState(() { 
+             _currentAirportCode = icao;
+             _searchController.text = icao;
+          });
+          _fetchMetarData();
+        },
+      ),
     );
   }
 
@@ -967,101 +818,12 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         const SizedBox(width: 12),
-        // Replaced Button with Capsule Widget
-        _buildNearestAirportCapsule(theme, isDark),
+        // Replaced Button (New Style)
+        _GlassLocateButton(
+          onPressed: () => _showNearestAirportsList(context),
+        ),
       ],
     );
-  }
-
-  // New Capsule Widget (Ported from DashBoard)
-  Widget _buildNearestAirportCapsule(ThemeData theme, bool isDark) {
-    return GestureDetector(
-      onTap: () => _showNearestAirportsList(context),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(30),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.6), 
-              borderRadius: BorderRadius.circular(30),
-              border: Border.all(color: Colors.white.withOpacity(0.2)),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, spreadRadius: 1)
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Radius Label
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    "$_searchRadius nm",
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                  ),
-                ),
-                
-                const SizedBox(width: 8),
-                
-                // Info
-                if (_isSearchingAirports)
-                  const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                else if (_nearestAirportIcao != null)
-                  Row(
-                    children: [
-                      Text(
-                        "$_nearestAirportIcao",
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        "${_nearestAirportDist?.toStringAsFixed(1)}",
-                        style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
-                      ),
-                    ],
-                  )
-                else
-                  Text("No Airports", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
-
-                const SizedBox(width: 8),
-
-                // Badge
-                if (_nearestAirportIcao != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    margin: const EdgeInsets.only(right: 2),
-                    decoration: BoxDecoration(
-                      color: _getCategoryColor(_nearestAirportCategory ?? ''),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      _nearestAirportCategory ?? 'N/A',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Color _getCategoryColor(String category) {
-    switch (category) {
-      case 'VFR': return const Color(0xFF10B981);
-      case 'MVFR': return const Color(0xFF3B82F6);
-      case 'IFR': return const Color(0xFFEF4444);
-      case 'LIFR': return const Color(0xFFD946EF);
-      default: return Colors.grey;
-    }
   }
 
   Widget _buildColdStartPlaceholder(ThemeData theme) {
@@ -1637,6 +1399,346 @@ class _HomePageState extends State<HomePage> {
           ),
           child: child,
         ),
+      ),
+    );
+  }
+}
+
+// Re-designed Square Button
+class _GlassLocateButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _GlassLocateButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    // Determine Theme Brightness
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // --- COLOR LOGIC ---
+    // Dark Mode: Background = Charcoal (0xFF333333), Icon = Light Blue Accent
+    // Light Mode: Background = White, Icon = Deep Blue (Colors.blue)
+    final Color bgColor = isDark ? const Color(0xFF333333) : Colors.white;
+    final Color iconColor = isDark ? Colors.lightBlueAccent : Colors.blue;
+    
+    // --- SHADOW LOGIC ---
+    // Subtle shadow in Light Mode to pop against map/background
+    final List<BoxShadow> shadows = isDark 
+      ? [
+          BoxShadow(
+             color: Colors.black.withOpacity(0.3),
+             blurRadius: 10,
+             spreadRadius: 2,
+           )
+        ]
+      : [
+          BoxShadow(
+             color: Colors.grey.withOpacity(0.4),
+             blurRadius: 8,
+             spreadRadius: 1,
+             offset: const Offset(0, 2), // Slight downward shadow
+           )
+        ];
+
+    return GestureDetector(
+      onTap: onPressed,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16), // Rounded Square
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: bgColor.withOpacity(0.9), // Slightly opaque for glass effect
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isDark ? Colors.white.withOpacity(0.2) : Colors.grey.withOpacity(0.1), 
+                width: 1
+              ),
+              boxShadow: shadows,
+            ),
+            child: Icon(Icons.my_location, color: iconColor, size: 28),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class NearestAirportsSheet extends StatefulWidget {
+  final double userLat;
+  final double userLon;
+  final int initialRadius;
+  final ValueChanged<String> onAirportSelected;
+
+  const NearestAirportsSheet({
+    super.key,
+    required this.userLat,
+    required this.userLon,
+    required this.initialRadius,
+    required this.onAirportSelected,
+  });
+
+  @override
+  State<NearestAirportsSheet> createState() => _NearestAirportsSheetState();
+}
+
+class _NearestAirportsSheetState extends State<NearestAirportsSheet> {
+  late int _currentRadius;
+  List<Map<String, dynamic>> _foundAirports = [];
+  bool _isSearching = true;
+  String? _dbContent;
+  Map<String, String> _airportCategories = {};
+  Timer? _categoryTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentRadius = widget.initialRadius;
+    _loadDbAndSearch();
+    
+    // Auto-Refresh Categories every 20 minutes
+    _categoryTimer = Timer.periodic(const Duration(minutes: 20), (_) {
+      _fetchCategories();
+    });
+  }
+
+  @override
+  void dispose() {
+    _categoryTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadDbAndSearch() async {
+    try {
+      _dbContent = await rootBundle.loadString('assets/GlobalAirportDatabase.txt');
+      _searchAirports();
+    } catch (e) {
+      debugPrint("DB Load Error: $e");
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
+  Future<void> _searchAirports() async {
+    if (!mounted || _dbContent == null) return;
+    setState(() => _isSearching = true);
+
+    final params = {
+      'content': _dbContent,
+      'lat': widget.userLat,
+      'lon': widget.userLon,
+      'radius': _currentRadius.toDouble(),
+    };
+
+    try {
+      final results = await compute(_calculateNearestAirports, params);
+      if (mounted) {
+        setState(() {
+          _foundAirports = results;
+          _isSearching = false;
+        });
+        _fetchCategories();
+      }
+    } catch (e) {
+      debugPrint("Search Error: $e");
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
+  Future<void> _fetchCategories() async {
+    if (_foundAirports.isEmpty) return;
+    
+    final codes = _foundAirports.map((a) => a['icao'] as String).toList();
+    
+    try {
+      final categories = await WeatherService.getFlightCategories(codes);
+      if (mounted) {
+        setState(() {
+          _airportCategories = categories;
+        });
+      }
+    } catch (e) {
+      debugPrint("Category Fetch Error: $e");
+    }
+  }
+
+  void _updateRadius(int newRadius) {
+    setState(() {
+      _currentRadius = newRadius;
+    });
+    _searchAirports();
+  }
+
+  Color _getCategoryColor(String? cat, bool isDark) {
+    if (cat == null) return Colors.grey;
+    switch (cat.toUpperCase()) {
+      case 'VFR': return isDark ? Colors.greenAccent : Colors.green;
+      case 'MVFR': return isDark ? Colors.blueAccent : Colors.blue;
+      case 'IFR': return isDark ? Colors.redAccent : Colors.red;
+      case 'LIFR': return isDark ? Colors.purpleAccent : Colors.purple;
+      default: return Colors.grey;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.85,
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 20)],
+      ),
+      child: Column(
+        children: [
+           // Handle
+           Center(
+             child: Container(
+               width: 40, height: 4, 
+               margin: const EdgeInsets.symmetric(vertical: 12), 
+               decoration: BoxDecoration(color: Colors.grey.withOpacity(0.5), borderRadius: BorderRadius.circular(2))
+             )
+           ),
+           
+           // Header
+           Padding(
+             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+             child: Row(
+               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+               children: [
+                 Row(
+                   children: [
+                     Icon(Icons.radar, color: theme.primaryColor),
+                     const SizedBox(width: 8),
+                     Text("Nearby Airports", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
+                   ],
+                 ),
+                 // Custom Dropdown Button
+                 PopupMenuButton<int>(
+                    initialValue: _currentRadius,
+                    offset: const Offset(0, 40),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    color: isDark ? const Color(0xFF2C2C2C) : Colors.white,
+                    onSelected: _updateRadius,
+                    itemBuilder: (context) => [10, 25, 50, 100].map((r) => PopupMenuItem(
+                      value: r,
+                      child: Text("$r nm", style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
+                    )).toList(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: theme.primaryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: theme.primaryColor.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Text("$_currentRadius nm", style: TextStyle(color: theme.primaryColor, fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 4),
+                          Icon(Icons.keyboard_arrow_down, color: theme.primaryColor, size: 16),
+                        ],
+                      ),
+                    ),
+                 ),
+               ],
+             ),
+           ),
+           const Divider(),
+           
+           // List Content
+           Expanded(
+              child: _isSearching 
+                ? Center(child: CircularProgressIndicator(color: theme.primaryColor))
+                : _foundAirports.isEmpty 
+                  ? Center(child: Text("No airports found within $_currentRadius nm.", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5))))
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      itemCount: _foundAirports.length,
+                      itemBuilder: (context, index) {
+                         final apt = _foundAirports[index];
+                         final double dist = apt['distance'];
+                         final cat = _airportCategories[apt['icao']];
+                         
+                         return InkWell(
+                            onTap: () => widget.onAirportSelected(apt['icao']),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              child: Row(
+                                children: [
+                                  // Distance
+                                  SizedBox(
+                                    width: 60,
+                                    child: Text(
+                                      "${dist.toStringAsFixed(1)} nm",
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: theme.primaryColor,
+                                      ),
+                                    ),
+                                  ),
+                                  // Info
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
+                                              apt['icao'],
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: theme.colorScheme.onSurface,
+                                              ),
+                                            ),
+                                            if (cat != null) ...[
+                                              const SizedBox(width: 8),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: _getCategoryColor(cat, isDark).withOpacity(0.2),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  border: Border.all(color: _getCategoryColor(cat, isDark), width: 1),
+                                                ),
+                                                child: Text(
+                                                  cat,
+                                                  style: TextStyle(
+                                                    color: _getCategoryColor(cat, isDark),
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 10,
+                                                  ),
+                                                ),
+                                              ),
+                                            ]
+                                          ],
+                                        ),
+                                        Text(
+                                          apt['name'],
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: theme.colorScheme.onSurface.withOpacity(0.6),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Icon(Icons.chevron_right, color: theme.colorScheme.onSurface.withOpacity(0.3), size: 18),
+                                ],
+                              ),
+                            ),
+                         );
+                      },
+                  )
+           )
+        ],
       ),
     );
   }

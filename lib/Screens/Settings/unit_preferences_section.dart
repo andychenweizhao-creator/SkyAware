@@ -181,7 +181,7 @@ class UnitPreferencesSection extends StatelessWidget {
       (unit) => _getDistSpeedLabel(unit),
       (unit) {
         provider.setDistanceSpeedUnit(unit);
-        onUnitChange('distanceUnit', unit);
+        onUnitChange('DistanceUnit', unit);
       },
     );
   }
@@ -195,7 +195,7 @@ class UnitPreferencesSection extends StatelessWidget {
       (unit) => _getAltitudeLabel(unit),
       (unit) {
         provider.setAltitudeUnit(unit);
-        onUnitChange('altitudeUnit', unit);
+        onUnitChange('Altitude', unit);
       },
     );
   }
@@ -209,7 +209,7 @@ class UnitPreferencesSection extends StatelessWidget {
       (unit) => _getPressureLabel(unit),
       (unit) {
         provider.setPressureUnit(unit);
-        onUnitChange('pressureUnit', unit);
+        onUnitChange('Pressure', unit);
       },
     );
   }
@@ -223,7 +223,7 @@ class UnitPreferencesSection extends StatelessWidget {
       (unit) => _getTemperatureLabel(unit),
       (unit) {
         provider.setTemperatureUnit(unit);
-        onUnitChange('temperatureUnit', unit);
+        onUnitChange('Temperature', unit);
       },
     );
   }

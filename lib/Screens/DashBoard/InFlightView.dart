@@ -80,6 +80,9 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   Position? _currentPosition;
   double? _currentAltitudeFeet;
   bool _showFullData = false;
+  
+  // Follow Mode State
+  bool _isFollowing = true; 
 
   final TextEditingController _altitudeController = TextEditingController();
 
@@ -229,10 +232,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   }
 
   // --- Route Logic Helpers ---
-  // ... (unchanged methods: _getAirportActionStats, _findBestInsertionIndex, _simulateCompareStats, _executeDirectTo, _setDestinationTruncate, _addStopover, _insertWaypoint, _removePoint, _showRouteOptions, _showAirportQuickView, _showDetailedAnalysis, _getCategoryColorHex)
-  // ... (unchanged methods: _startEmergencyFlow, _processEmergency, _parseHexColor, _updateAirportLayer, _buildAirportMarker, _initLocationService, _calculateDestinationPoint, _scanTerrainSurroundings, _allPolygons, _getVisibleFeatures, _parseAltitudeRange, _fetchWeatherData, _toggleWeatherLayer, _processGeometry, _parsePolygonCoordinates, _getWeatherColor, _handleMapTap, isPointInPolygon, _analyzeHazardsWithGemini, _getAiSummary)
-  
-  // Re-adding logic helpers to ensure file integrity when using write_file
   Map<String, double> _getAirportActionStats(Airport airport) {
     final latLng = LatLng(airport.lat, airport.lon);
     final stats = _simulateCompareStats(RoutePoint(id: airport.ident, point: latLng, type: 'airport'));
@@ -873,7 +872,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
           _altitudeController.text = _currentAltitudeFeet!.toStringAsFixed(0);
         });
         
-        if (!_isEmergencyMode) {
+        if (!_isEmergencyMode && _isFollowing) {
           widget.mapController?.move(
             LatLng(position.latitude, position.longitude), 
             widget.mapController?.camera.zoom ?? 6.0
@@ -1516,6 +1515,47 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     );
   }
 
+  Widget _buildFollowButton() {
+    return ClipOval(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              setState(() {
+                _isFollowing = true;
+              });
+              if (_currentPosition != null) {
+                widget.mapController?.move(
+                  LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                  widget.mapController?.camera.zoom ?? 6.0
+                );
+              }
+            },
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.6),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: _isFollowing ? Colors.blueAccent : Colors.white.withOpacity(0.2),
+                  width: 2
+                ),
+              ),
+              child: Icon(
+                _isFollowing ? Icons.gps_fixed : Icons.gps_not_fixed,
+                color: _isFollowing ? Colors.blueAccent : Colors.white70,
+                size: 24,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   List<Marker> _buildRouteMarkers() {
     if (_activeRoutePoints.isEmpty) return [];
 
@@ -1621,6 +1661,9 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
               },
               onPositionChanged: (position, hasGesture) {
                 if (hasGesture) {
+                   if (_isFollowing) {
+                     setState(() => _isFollowing = false);
+                   }
                   _mapDebounce?.cancel();
                   _mapDebounce = Timer(const Duration(milliseconds: 500), () {
                     if (!mounted) return;
@@ -1835,7 +1878,15 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
             Positioned(
               right: 16,
               bottom: 100, // Adjusted to sit above Flight Panel
-              child: _buildZoomControls(),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                   _buildFollowButton(),
+                   const SizedBox(height: 16),
+                   _buildZoomControls(),
+                ],
+              ),
             ),
           
           if (_isEmergencyMode && _emergencyData != null)

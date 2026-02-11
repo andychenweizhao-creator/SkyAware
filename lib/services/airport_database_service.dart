@@ -129,6 +129,44 @@ class AirportDatabaseService {
     }).toList();
   }
 
+  /// Finds airports within a specific radius in Nautical Miles.
+  List<Airport> getAirportsWithinRadius(double lat, double lon, double radiusNm) {
+    if (!_isLoaded) return [];
+
+    final Distance distance = const Distance();
+    final LatLng currentPos = LatLng(lat, lon);
+    final List<MapEntry<Airport, double>> results = [];
+
+    // Optimization: 1 degree latitude is ~60nm.
+    // Use a buffer slightly larger than required radius
+    double degreesBuffer = (radiusNm / 60.0) * 1.5; 
+
+    for (final airport in _allAirports) {
+      // Coarse Filter
+      if ((airport.lat - lat).abs() > degreesBuffer || (airport.lon - lon).abs() > degreesBuffer) continue;
+
+      // Exclusion Logic (Copied for consistency)
+      String nameUpper = airport.name.toUpperCase();
+      if (nameUpper.contains("HELIPORT") || nameUpper.contains("HELIPAD") || nameUpper.contains("HELI ")) continue;
+      if (nameUpper.contains("SEAPLANE") || nameUpper.contains(" SPB ") || nameUpper.contains("FLOAT")) continue;
+      if (nameUpper.contains("STATION") || nameUpper.contains("TRAIN")) continue;
+      if (nameUpper.contains("OFFLINE") || nameUpper.contains("CLOSED")) continue;
+      if (airport.lat == 0.0 && airport.lon == 0.0) continue;
+
+      final double distMeters = distance.as(LengthUnit.Meter, currentPos, LatLng(airport.lat, airport.lon));
+      final double distNm = distMeters / 1852.0;
+
+      if (distNm <= radiusNm) {
+        results.add(MapEntry(airport, distNm));
+      }
+    }
+
+    // Sort by distance
+    results.sort((a, b) => a.value.compareTo(b.value));
+
+    return results.map((e) => e.key).toList();
+  }
+
   /// Finds the nearest [limit] airports to the given coordinates.
   /// Uses Haversine distance.
   List<Airport> getNearestAirports(double lat, double lon, int limit) {

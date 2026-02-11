@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:skyaware/UI/theme_controller.dart';
 import '../../models/UserModel.dart';
-import '../../services/FireBaseService.dart';
+import '../../services/FirebaseService.dart';
 import '../Login/login_page.dart';
 import 'unit_preferences_section.dart';
 
