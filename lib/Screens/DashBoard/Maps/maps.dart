@@ -6,14 +6,16 @@ import 'package:provider/provider.dart';
 import 'package:skyaware/UI/theme_controller.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import '../../../UI/AppAnimations.dart';
-import '../../../UI/AirportDetailSheet.dart'; // IMPORT THIS
+import '../../../UI/AirportDetailSheet.dart';
 
 // Consolidated RoutePoint class
 class RoutePoint {
-  final String id; // e.g., "KLAX"
-  final LatLng point;
-  final String type; // "origin", "destination", or "waypoint"
-  RoutePoint({required this.id, required this.point, this.type = 'waypoint'});
+  final String id;       // "KLAX" or "WP-1"
+  final LatLng point;    // Coordinates
+  final String type;     // 'origin', 'waypoint', 'destination', 'airport'
+  final String? name;    // Optional display name
+  
+  RoutePoint({required this.id, required this.point, required this.type, this.name});
 }
 
 class Maps extends StatefulWidget {
@@ -23,6 +25,8 @@ class Maps extends StatefulWidget {
   final List<Marker> hazardMarkers;
   final List<Marker> airportMarkers; // Added for AI Airport Scanner
   final Function(LatLng)? onMapTap;
+  final Function(TapPosition, LatLng)? onMapLongPress;
+  final Function(RoutePoint)? onRoutePointTap; // NEW: Callback for route point taps
   final GenerativeModel? aiModel; // AI Model for airport search
 
   const Maps({
@@ -31,8 +35,10 @@ class Maps extends StatefulWidget {
     this.weatherPolygons = const [],
     this.routePoints = const [],
     this.hazardMarkers = const [],
-    this.airportMarkers = const [], // Default empty
+    this.airportMarkers = const [],
     this.onMapTap,
+    this.onMapLongPress,
+    this.onRoutePointTap,
     this.aiModel,
   });
 
@@ -51,74 +57,64 @@ class _MapsState extends State<Maps> {
         ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
         : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
 
+    // 1. Shared UI Logic for Route Markers
     List<Marker> buildRoutePointMarkers() {
       return widget.routePoints.map((routePoint) {
-        IconData iconData;
-        Color iconColor;
-        double iconSize = 24.0;
-
-        switch (routePoint.type) {
-          case 'origin':
-            iconData = Icons.flight_takeoff;
-            iconColor = Colors.green;
-            break;
-          case 'destination':
-            iconData = Icons.flight_land;
-            iconColor = Colors.red;
-            break;
-          default: // 'waypoint'
-            iconData = Icons.circle;
-            iconColor = Colors.white;
-            iconSize = 8.0;
-        }
-
         return Marker(
-          width: 80.0,
-          height: 80.0,
+          width: 120.0, // Wider to accommodate text
+          height: 60.0,
           point: routePoint.point,
           alignment: Alignment.center,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Layer 1: The Icon
-              GestureDetector(
-                onTap: () {
-                  // Only for valid Airport IDs (usually 3-4 chars)
-                  if (routePoint.id.length >= 3 && routePoint.id.length <= 4) {
-                    showModalBottomSheet(
-                      context: context,
-                      backgroundColor: Colors.transparent,
-                      isScrollControlled: true,
-                      builder: (ctx) => AirportDetailSheet(
-                        icao: routePoint.id,
-                        aiModel: widget.aiModel,
-                      ),
-                    );
-                  }
-                },
-                child: Icon(iconData, color: iconColor, size: iconSize),
-              ),
-
-              // Layer 2: The Text Label
-              Positioned(
-                top: 30,
-                child: Container(
+          child: GestureDetector(
+            onTap: () {
+               if (widget.onRoutePointTap != null) {
+                 widget.onRoutePointTap!(routePoint);
+               }
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // 1. The Label
+                Container(
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.5),
+                    color: Colors.black.withOpacity(0.7),
                     borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.white24, width: 0.5),
                   ),
                   child: Text(
-                    routePoint.id,
+                    routePoint.name ?? routePoint.id, 
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 2),
+                
+                // 2. The Dot
+                Container(
+                  width: 12, 
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: Colors.cyanAccent,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.black, width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.cyanAccent.withOpacity(0.5), 
+                        blurRadius: 6,
+                        spreadRadius: 1
+                      )
+                    ]
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       }).toList();
@@ -133,6 +129,7 @@ class _MapsState extends State<Maps> {
             initialZoom: 4.0,
             interactionOptions: const InteractionOptions(flags: InteractiveFlag.all),
             onTap: (_, point) => widget.onMapTap?.call(point),
+            onLongPress: widget.onMapLongPress,
           ),
           children: [
             TileLayer(
@@ -153,7 +150,7 @@ class _MapsState extends State<Maps> {
                   Polyline(
                     points: widget.routePoints.map((rp) => rp.point).toList(),
                     strokeWidth: 4.0,
-                    color: Colors.greenAccent, // High-visibility color
+                    color: Colors.cyanAccent.withOpacity(0.8), // Matches dot color
                     borderColor: Colors.black.withOpacity(0.5),
                     borderStrokeWidth: 1.0,
                   ),

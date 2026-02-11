@@ -2,6 +2,8 @@ import 'dart:ui';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:async';
+import 'package:flutter/foundation.dart'; // Added for compute
+import 'package:flutter/services.dart'; // Added for rootBundle
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,7 +14,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../UI/AppAnimations.dart';
 import '../../services/unit_settings_service.dart';
-import '../../services/ai_airport_service.dart'; // IMPORT THIS
+// import '../../services/ai_airport_service.dart'; // Removed to be self-contained
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -31,7 +33,7 @@ class _HomePageState extends State<HomePage> {
   int _utcOffsetSeconds = 0; // Added for Location Local Time
   String _errorMessage = '';
   String? _gpsLocationName; // Current User Location
-  int _searchRadius = 50; // Default to 50 nm
+  int _searchRadius = 25; // Default to 25 nm (Updated to match Dashboard)
 
   String _currentAirportCode = "";
   late final TextEditingController _searchController;
@@ -52,6 +54,17 @@ class _HomePageState extends State<HomePage> {
   static const Duration _geminiTimeout = Duration(seconds: 25);
   static const Duration _geminiRetryDelay = Duration(milliseconds: 600);
 
+  // Nearest Airport Algorithm State
+  String? _nearestAirportIcao;
+  double? _nearestAirportDist;
+  String? _nearestAirportCategory;
+  Timer? _weatherTimer;
+
+  // New Local Search State
+  List<Map<String, dynamic>> _foundAirports = [];
+  bool _isSearchingAirports = false;
+  String? _cachedDatabaseContent;
+
   @override
   void initState() {
     super.initState();
@@ -69,7 +82,7 @@ class _HomePageState extends State<HomePage> {
     // Fetch User GPS Location
     _fetchUserLocation();
 
-    // Initialize Gemini Model with Strict Safety Settings (Off)
+    // Initialize Gemini Model
     try {
       if (_apiKey.isNotEmpty) {
         _model = GenerativeModel(
@@ -92,9 +105,257 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _clockTimer?.cancel();
+    _weatherTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
+
+  // --- Nearest Airport Algorithm (Background) ---
+
+  Future<void> _updateNearestAirport() async {
+    if (_lat == null || _lon == null) return;
+
+    if (mounted) setState(() => _isSearchingAirports = true);
+
+    if (_cachedDatabaseContent == null) {
+      try {
+        _cachedDatabaseContent = await rootBundle.loadString('assets/GlobalAirportDatabase.txt');
+      } catch (e) {
+        debugPrint("Error loading DB: $e");
+        if (mounted) setState(() => _isSearchingAirports = false);
+        return;
+      }
+    }
+
+    final params = {
+      'content': _cachedDatabaseContent,
+      'lat': _lat,
+      'lon': _lon,
+      'radius': _searchRadius.toDouble(),
+    };
+
+    try {
+      final results = await compute(_calculateNearestAirports, params);
+      
+      if (mounted) {
+        setState(() {
+          _foundAirports = results;
+          _isSearchingAirports = false;
+          
+          if (results.isNotEmpty) {
+            _nearestAirportIcao = results.first['icao'];
+            _nearestAirportDist = results.first['distance'];
+            _fetchNearestAirportStatus(); // Fetch METAR for category
+          } else {
+            _nearestAirportIcao = null;
+            _nearestAirportDist = null;
+            _nearestAirportCategory = null;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint("Compute error in Homepage: $e");
+      if (mounted) setState(() => _isSearchingAirports = false);
+    }
+  }
+
+  Future<void> _fetchNearestAirportStatus() async {
+    if (_nearestAirportIcao == null) return;
+    try {
+      final response = await http.get(
+        Uri.parse('https://aviationweather.gov/api/data/metar?ids=$_nearestAirportIcao&format=geojson&taf=false&hours=0&_=${DateTime.now().millisecondsSinceEpoch}'),
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final features = data['features'] as List;
+        if (features.isNotEmpty) {
+          final properties = features[0]['properties'];
+          final String? category = properties['fltcat'];
+          if (mounted) {
+            setState(() {
+              _nearestAirportCategory = category;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching status for nearest airport: $e");
+    }
+  }
+
+  // --- End Nearest Airport Algorithm ---
+
+  // --- New Fully Self-Contained Local Search Feature ---
+
+  void _showNearestAirportsList(BuildContext context) {
+    if (_lat == null || _lon == null) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Location not available yet.")));
+       return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final theme = Theme.of(context);
+        final isDark = theme.brightness == Brightness.dark;
+
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.85,
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 20)],
+              ),
+              child: Column(
+                children: [
+                   // Handle
+                   Center(
+                     child: Container(
+                       width: 40, height: 4, 
+                       margin: const EdgeInsets.symmetric(vertical: 12), 
+                       decoration: BoxDecoration(color: Colors.grey.withOpacity(0.5), borderRadius: BorderRadius.circular(2))
+                     )
+                   ),
+                   
+                   // Title & Radius Selector
+                   Padding(
+                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                     child: Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         Row(
+                           children: [
+                             Icon(Icons.radar, color: theme.primaryColor),
+                             const SizedBox(width: 8),
+                             Text("Nearby Airports", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
+                           ],
+                         ),
+                         const SizedBox(height: 16),
+                         SingleChildScrollView(
+                           scrollDirection: Axis.horizontal,
+                           child: Row(
+                             children: [10, 25, 50, 100].map((r) {
+                                final isSelected = _searchRadius == r;
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: ChoiceChip(
+                                    label: Text("$r nm"),
+                                    labelStyle: TextStyle(
+                                      color: isSelected ? Colors.white : theme.colorScheme.onSurface,
+                                      fontWeight: FontWeight.bold
+                                    ),
+                                    selected: isSelected,
+                                    selectedColor: theme.primaryColor,
+                                    backgroundColor: theme.cardColor,
+                                    onSelected: (val) {
+                                       if (val) {
+                                         setState(() { 
+                                           _searchRadius = r;
+                                         });
+                                         setSheetState(() {});
+                                         _updateNearestAirport().then((_) {
+                                            if (context.mounted) setSheetState(() {});
+                                         });
+                                       }
+                                    },
+                                  ),
+                                );
+                             }).toList(),
+                           ),
+                         ),
+                       ],
+                     ),
+                   ),
+                   const Divider(),
+                   
+                   // List Content
+                   Expanded(
+                      child: _isSearchingAirports 
+                        ? Center(child: CircularProgressIndicator(color: theme.primaryColor))
+                        : _foundAirports.isEmpty 
+                          ? Center(child: Text("No airports found within ${_searchRadius}nm.", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5))))
+                          : ListView.builder(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              itemCount: _foundAirports.length,
+                              itemBuilder: (context, index) {
+                                 final apt = _foundAirports[index];
+                                 final double dist = apt['distance'];
+                                 
+                                 return InkWell(
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      setState(() { 
+                                         _currentAirportCode = apt['icao'];
+                                         _searchController.text = apt['icao'];
+                                      });
+                                      _fetchMetarData();
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                      child: Row(
+                                        children: [
+                                          // Distance
+                                          SizedBox(
+                                            width: 60,
+                                            child: Text(
+                                              "${dist.toStringAsFixed(1)} nm",
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.bold,
+                                                color: theme.primaryColor,
+                                              ),
+                                            ),
+                                          ),
+                                          // Info
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  apt['icao'],
+                                                  style: TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: theme.colorScheme.onSurface,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  apt['name'],
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          // Badge Placeholder
+                                          // We don't have cat for all, only nearest.
+                                          const SizedBox(width: 8),
+                                          Icon(Icons.chevron_right, color: theme.colorScheme.onSurface.withOpacity(0.3), size: 18),
+                                        ],
+                                      ),
+                                    ),
+                                 );
+                              },
+                          )
+                   )
+                ],
+              ),
+            );
+          }
+        );
+      }
+    );
+  }
+
+  // --- End New Feature ---
 
   Future<void> _fetchUserLocation() async {
     if (mounted) setState(() => _gpsLocationName = "Locating...");
@@ -122,6 +383,16 @@ class _HomePageState extends State<HomePage> {
 
       Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.low);
       
+      if (mounted) {
+        setState(() {
+          _lat = position.latitude;
+          _lon = position.longitude;
+        });
+        
+        // Trigger Nearest Airport Search once location is found
+        _updateNearestAirport();
+      }
+
       List<Placemark> placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
       
       if (placemarks.isNotEmpty && mounted) {
@@ -140,229 +411,6 @@ class _HomePageState extends State<HomePage> {
       debugPrint("Error fetching location: $e");
       if (mounted) setState(() => _gpsLocationName = "Location Error");
     }
-  }
-
-  Future<void> _fetchNearbyAirports() async {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    // 1. Check Permissions & Service First
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Location services are disabled.")));
-      return;
-    }
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Location permission denied")));
-        return;
-      }
-    }
-    
-    if (permission == LocationPermission.deniedForever) {
-       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Location permission permanently denied. Enable in Settings.")));
-       return;
-    }
-
-    if (_model == null) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("AI Model not initialized. Cannot fetch airports.")));
-      return;
-    }
-
-    // Show loading indicator
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Center(child: CircularProgressIndicator(color: theme.primaryColor)),
-    );
-
-    try {
-      // 2. Get Location with Timeout
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-        timeLimit: const Duration(seconds: 10),
-      );
-      
-      double lat = position.latitude;
-      double lon = position.longitude;
-
-      // Simulator Fallback (Googleplex is around 37.422, -122.084)
-      if ((lat == 0 && lon == 0) || (lat > 37.4 && lat < 37.43 && lon < -122.08 && lon > -122.09)) {
-         lat = 33.8885;
-         lon = -117.8131;
-         debugPrint("Using Simulator Fallback Coordinates: Yorba Linda (KFUL nearby)");
-      }
-      
-      // 3. Use AI Airport Service (REFACTORED)
-      final airports = await AiAirportService.searchNearbyAirports(lat, lon, _searchRadius, _model!);
-      
-      if (!mounted) return;
-      Navigator.of(context).pop(); // Dismiss loading
-
-      if (airports.isEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No airports found by Co-pilot.")));
-        return;
-      }
-
-      // Show Selection Sheet (Service already formatted the data correctly)
-      if (mounted) {
-        _showAirportSelectionSheet(airports, theme, isDark, lat, lon);
-      }
-
-    } catch (e) {
-      if (mounted) {
-        Navigator.of(context).pop(); // Dismiss loading
-        debugPrint("Error finding nearby airports with AI: $e");
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Co-pilot could not locate airports.")));
-      }
-    }
-  }
-
-  void _showAirportSelectionSheet(List<Map<String, dynamic>> airports, ThemeData theme, bool isDark, double userLat, double userLon) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E1E1E).withOpacity(0.98) : Colors.white.withOpacity(0.98),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20)],
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Container(
-                width: 40, height: 4,
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(color: Colors.grey.withOpacity(0.5), borderRadius: BorderRadius.circular(2)),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.radar, color: theme.primaryColor),
-                        const SizedBox(width: 8),
-                        Text("Nearest Stations", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
-                      ],
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.map_outlined),
-                      tooltip: "View on Google Maps",
-                      onPressed: () async {
-                         final Uri url = Uri.parse("https://www.google.com/maps/search/airports/@$userLat,$userLon,11z");
-                         if (await canLaunchUrl(url)) {
-                           await launchUrl(url, mode: LaunchMode.externalApplication);
-                         } else {
-                           if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Could not launch Google Maps")));
-                         }
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
-                  itemCount: airports.length,
-                  itemBuilder: (context, index) {
-                    final item = airports[index];
-                    final props = item['data']['properties'];
-                    final double distMeters = item['distance'];
-                    // Convert meters to Nautical Miles
-                    final double distNm = distMeters * 0.000539957;
-                    
-                    final String icao = props['id'] ?? 'Unknown';
-                    final String name = props['site'] ?? 'Unknown Station';
-
-                    // Extract coordinates for the specific airport
-                    final geom = item['data']['geometry'];
-                    final coords = geom['coordinates'];
-                    final double stLat = (coords[1] as num).toDouble();
-                    final double stLon = (coords[0] as num).toDouble();
-
-                    return InkWell(
-                      onTap: () {
-                        Navigator.pop(context); // Close sheet
-                        _searchController.text = icao;
-                        setState(() {
-                          _currentAirportCode = icao;
-                        });
-                        _fetchMetarData();
-                      },
-                      onLongPress: () async {
-                         // Open specific airport in Maps
-                         final Uri url = Uri.parse("https://www.google.com/maps/search/?api=1&query=$stLat,$stLon");
-                         if (await canLaunchUrl(url)) {
-                           await launchUrl(url, mode: LaunchMode.externalApplication);
-                         }
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                        child: Row(
-                          children: [
-                            // Left: Distance
-                            SizedBox(
-                              width: 60,
-                              child: Text(
-                                "${distNm.toStringAsFixed(1)} nm",
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: theme.primaryColor,
-                                ),
-                              ),
-                            ),
-                            // Middle: Info
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    icao,
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: theme.colorScheme.onSurface,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    name,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: theme.colorScheme.onSurface.withOpacity(0.5),
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            // Right: Icon
-                            Icon(Icons.chevron_right, color: theme.colorScheme.onSurface.withOpacity(0.3), size: 18),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   Future<void> _fetchMetarData() async {
@@ -673,7 +721,7 @@ class _HomePageState extends State<HomePage> {
                                      overflow: TextOverflow.ellipsis,
                                    ),
                                  ),
-                               ],
+                                ],
                              ),
                            ),
                       ],
@@ -919,62 +967,101 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         const SizedBox(width: 12),
-        // Combo Button for Range & Search
-        SpringButton(
-          child: _buildGlassCard(
-            isDark: isDark,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        // Replaced Button with Capsule Widget
+        _buildNearestAirportCapsule(theme, isDark),
+      ],
+    );
+  }
+
+  // New Capsule Widget (Ported from DashBoard)
+  Widget _buildNearestAirportCapsule(ThemeData theme, bool isDark) {
+    return GestureDetector(
+      onTap: () => _showNearestAirportsList(context),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(30),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.6), 
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(color: Colors.white.withOpacity(0.2)),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, spreadRadius: 1)
+              ],
+            ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Range Selector
-                PopupMenuButton<int>(
-                  initialValue: _searchRadius,
-                  onSelected: (value) {
-                    setState(() {
-                      _searchRadius = value;
-                    });
-                  },
-                  itemBuilder: (context) => [25, 50, 100, 200].map((r) => PopupMenuItem(
-                    value: r,
-                    child: Text("$r nm"),
-                  )).toList(),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
-                    child: Row(
-                      children: [
-                        Text(
-                          "$_searchRadius nm",
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurface,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(Icons.arrow_drop_down, color: theme.colorScheme.onSurface.withOpacity(0.7), size: 18),
-                      ],
-                    ),
+                // Radius Label
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    "$_searchRadius nm",
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
                   ),
                 ),
-                // Divider
-                Container(
-                  height: 24,
-                  width: 1,
-                  color: theme.colorScheme.onSurface.withOpacity(0.2),
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                ),
-                // Near Me Button
-                IconButton(
-                  icon: Icon(Icons.near_me, color: theme.primaryColor),
-                  onPressed: _fetchNearbyAirports,
-                  tooltip: "Find Nearby",
-                ),
+                
+                const SizedBox(width: 8),
+                
+                // Info
+                if (_isSearchingAirports)
+                  const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                else if (_nearestAirportIcao != null)
+                  Row(
+                    children: [
+                      Text(
+                        "$_nearestAirportIcao",
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        "${_nearestAirportDist?.toStringAsFixed(1)}",
+                        style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                      ),
+                    ],
+                  )
+                else
+                  Text("No Airports", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
+
+                const SizedBox(width: 8),
+
+                // Badge
+                if (_nearestAirportIcao != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    margin: const EdgeInsets.only(right: 2),
+                    decoration: BoxDecoration(
+                      color: _getCategoryColor(_nearestAirportCategory ?? ''),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      _nearestAirportCategory ?? 'N/A',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
+                    ),
+                  ),
               ],
             ),
           ),
         ),
-      ],
+      ),
     );
+  }
+
+  Color _getCategoryColor(String category) {
+    switch (category) {
+      case 'VFR': return const Color(0xFF10B981);
+      case 'MVFR': return const Color(0xFF3B82F6);
+      case 'IFR': return const Color(0xFFEF4444);
+      case 'LIFR': return const Color(0xFFD946EF);
+      default: return Colors.grey;
+    }
   }
 
   Widget _buildColdStartPlaceholder(ThemeData theme) {
@@ -1553,4 +1640,76 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
+}
+
+// --- Top Level Isolate Function for compute() ---
+List<Map<String, dynamic>> _calculateNearestAirports(Map<String, dynamic> params) {
+  final String fileContent = params['content'];
+  final double userLat = params['lat'];
+  final double userLon = params['lon'];
+  final double radiusNm = params['radius'];
+  final double radiusMeters = radiusNm * 1852.0;
+
+  final List<String> lines = const LineSplitter().convert(fileContent);
+  final List<Map<String, dynamic>> results = [];
+
+  for (String line in lines) {
+    if (line.trim().isEmpty) continue;
+    final parts = line.split(':');
+    if (parts.length < 14) continue;
+
+    String name = parts[2].trim();
+    String nameUpper = name.toUpperCase();
+    if (nameUpper.contains("HELIPORT") || nameUpper.contains("HELIPAD") || nameUpper.contains("HELI ")) continue;
+    if (nameUpper.contains("SEAPLANE") || nameUpper.contains(" SPB ") || nameUpper.contains("FLOATPLANE")) continue;
+    if (nameUpper.contains("STATION") || nameUpper.contains("TRAIN")) continue;
+
+    int latDeg = int.tryParse(parts[5]) ?? 0;
+    int latMin = int.tryParse(parts[6]) ?? 0;
+    int latSec = int.tryParse(parts[7]) ?? 0;
+    String latDir = parts[8].toUpperCase();
+
+    int lonDeg = int.tryParse(parts[9]) ?? 0;
+    int lonMin = int.tryParse(parts[10]) ?? 0;
+    int lonSec = int.tryParse(parts[11]) ?? 0;
+    String lonDir = parts[12].toUpperCase();
+
+    double lat = latDeg + (latMin / 60.0) + (latSec / 3600.0);
+    if (latDir == 'S') lat = -lat;
+
+    double lon = lonDeg + (lonMin / 60.0) + (lonSec / 3600.0);
+    if (lonDir == 'W') lon = -lon;
+
+    if (lat == 0.0 && lon == 0.0) continue;
+
+    // Simple bounding box check (optimization)
+    // 1 deg lat ~= 60nm. 
+    if ((lat - userLat).abs() > (radiusNm / 30.0)) continue; 
+    if ((lon - userLon).abs() > (radiusNm / 30.0)) continue; 
+
+    double distMeters = _haversineDistanceTop(userLat, userLon, lat, lon);
+    if (distMeters <= radiusMeters) {
+      String icao = parts[0];
+      if (icao == 'N/A') icao = parts[1];
+      if (icao == 'N/A' || icao.isEmpty) continue;
+
+      results.add({
+        'icao': icao,
+        'name': name,
+        'distance': distMeters / 1852.0, 
+      });
+    }
+  }
+
+  results.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
+  return results;
+}
+
+double _haversineDistanceTop(double lat1, double lon1, double lat2, double lon2) {
+    const p = 0.017453292519943295;
+    const c = math.cos;
+    final a = 0.5 - c((lat2 - lat1) * p)/2 + 
+          c(lat1 * p) * c(lat2 * p) * 
+          (1 - c((lon2 - lon1) * p))/2;
+    return 12742 * math.asin(math.sqrt(a)) * 1000;
 }

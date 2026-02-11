@@ -17,7 +17,7 @@ class Navigationbar extends StatefulWidget{
 
 class NavigationbarState extends State<Navigationbar>{
   int currentIndex = 0;
-  bool _hideNavBar = false; // State to toggle nav bar visibility
+  bool _hideNavBar = false; // State to toggle nav bar visibility (In-flight or Emergency)
 
   void onTabTapped(int index) {
     setState(() {
@@ -29,18 +29,16 @@ class NavigationbarState extends State<Navigationbar>{
   @override
   Widget build(BuildContext context) {
     // Rebuild pages on every build to propagate theme changes to Settings
-    // Pass callback to DashBoard
     final List<Widget> pages = [
       const HomePage(),
       DashBoard(
-        onEmergencyStateChanged: (isEmergency) {
-          // Delay setState to avoid building while building if called directly from build
-          // But here it's called from callbacks in DashBoard children, so mostly fine.
-          // Using microtask just in case it happens during a build phase.
+        onEmergencyStateChanged: (shouldHide) {
+          // Callback received from DashBoard (In-Flight Mode or Emergency)
+          // Using microtask to safely update state during build cycle if necessary
           Future.microtask(() {
-            if (mounted) {
+            if (mounted && _hideNavBar != shouldHide) {
               setState(() {
-                _hideNavBar = isEmergency;
+                _hideNavBar = shouldHide;
               });
             }
           });
@@ -56,7 +54,7 @@ class NavigationbarState extends State<Navigationbar>{
         index: currentIndex,
         children: pages,
       ),
-      // Hide nav bar if emergency mode is active
+      // Conditionally hide the navigation bar based on state
       bottomNavigationBar: _hideNavBar ? null : _buildGlassNavigationBar(context),
     );
   }

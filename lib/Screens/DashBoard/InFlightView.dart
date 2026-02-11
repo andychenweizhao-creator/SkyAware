@@ -5,7 +5,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide Path; // HIDE Path to avoid conflict with dart:ui.Path
 import 'package:geolocator/geolocator.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:provider/provider.dart';
@@ -18,8 +18,10 @@ import '../../services/airport_database_service.dart'; // Local DB
 import '../../services/ai_grading_service.dart'; // AI Grading
 import '../../UI/AppAnimations.dart';
 import '../../UI/AirportDetailSheet.dart';
+import '../../UI/AirportStatusPopup.dart'; // NEW: Reusable Popup
 import '../../services/ai_emergency_service.dart';
 import '../../UI/EmergencyOverlay.dart';
+import '../../services/weather_service.dart'; // Ensure WeatherService is imported
 
 class HazardInfo {
   final LatLng point;
@@ -28,12 +30,32 @@ class HazardInfo {
   HazardInfo(this.point, this.terrainAltFeet, this.planeAltFeet);
 }
 
+// --- Leg Data Class ---
+class LegData {
+  final LatLng start;
+  final LatLng end;
+  final double bearing;
+  final double distanceNm;
+  final LatLng midPoint;
+  final String endWptId;
+
+  LegData({
+    required this.start, 
+    required this.end, 
+    required this.bearing, 
+    required this.distanceNm, 
+    required this.midPoint, 
+    required this.endWptId
+  });
+}
+
 class InFlightView extends StatefulWidget {
   final VoidCallback onExit;
   final List<RoutePoint> routePoints;
   final List<Polygon> weatherPolygons;
   final MapController? mapController;
   final ValueChanged<bool>? onEmergencyStateChanged;
+  final Position? initialPosition;
 
   const InFlightView({
     super.key,
@@ -42,6 +64,7 @@ class InFlightView extends StatefulWidget {
     this.weatherPolygons = const [],
     this.mapController,
     this.onEmergencyStateChanged,
+    this.initialPosition,
   });
 
   @override
@@ -71,15 +94,21 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   // Airport Layer State
   bool _showAirports = false;
   List<Marker> _airportMarkers = [];
+  Timer? _weatherTimer; // Background timer for flight category refresh
 
   // EMERGENCY STATE
   bool _isEmergencyMode = false;
   Map<String, dynamic>? _emergencyData;
   List<LatLng> _emergencyRoute = [];
+  
+  // Local Mutable Route (so we can edit it in-flight)
+  late List<RoutePoint> _activeRoutePoints;
 
   @override
   void initState() {
     super.initState();
+    _activeRoutePoints = List.from(widget.routePoints); // Clone initial route
+
     if (_kGeminiApiKey.isNotEmpty && _kGeminiApiKey != 'YOUR_GEMINI_API_KEY') {
       try {
         _model = GenerativeModel(
@@ -97,7 +126,15 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
       duration: const Duration(milliseconds: 500)
     )..repeat(reverse: true);
 
+    // Initialize position from parent if available
+    if (widget.initialPosition != null) {
+      _currentPosition = widget.initialPosition;
+      _currentAltitudeFeet = widget.initialPosition!.altitude * 3.28084;
+      _altitudeController.text = _currentAltitudeFeet!.toStringAsFixed(0);
+    }
+
     _initLocationService();
+    _startWeatherTimer(); // Start background refresh
   }
 
   @override
@@ -109,8 +146,415 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     _positionStream?.cancel();
     _flashController?.dispose();
     _mapDebounce?.cancel();
+    _weatherTimer?.cancel();
     _altitudeController.dispose();
     super.dispose();
+  }
+
+  void _startWeatherTimer() {
+    // Refresh flight categories every 20 minutes to prevent stale data
+    _weatherTimer = Timer.periodic(const Duration(minutes: 20), (timer) {
+      if (_showAirports) {
+        _updateAirportLayer();
+      }
+    });
+  }
+  
+  // --- Helper: Route Math ---
+  List<LegData> _calculateLegStats() {
+    if (_activeRoutePoints.isEmpty) return [];
+    
+    final List<LegData> legs = [];
+    final Distance distCalc = const Distance();
+    
+    // Leg 0: Plane -> First Waypoint (Active Leg)
+    if (_currentPosition != null) {
+      final p1 = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
+      final p2 = _activeRoutePoints.first.point;
+      
+      // Only add if not extremely close to prevent flicker
+      if (distCalc.as(LengthUnit.Meter, p1, p2) > 100) {
+        final double distM = distCalc.as(LengthUnit.Meter, p1, p2);
+        final double bearing = distCalc.bearing(p1, p2);
+        final mid = LatLng((p1.latitude + p2.latitude)/2, (p1.longitude + p2.longitude)/2);
+        
+        legs.add(LegData(
+          start: p1, 
+          end: p2, 
+          bearing: (bearing + 360) % 360, 
+          distanceNm: distM / 1852.0, 
+          midPoint: mid,
+          endWptId: _activeRoutePoints.first.name ?? _activeRoutePoints.first.id
+        ));
+      }
+    }
+    
+    // Subsequent Legs
+    for (int i = 0; i < _activeRoutePoints.length - 1; i++) {
+      final p1 = _activeRoutePoints[i].point;
+      final p2 = _activeRoutePoints[i+1].point;
+      
+      final double distM = distCalc.as(LengthUnit.Meter, p1, p2);
+      final double bearing = distCalc.bearing(p1, p2);
+      final mid = LatLng((p1.latitude + p2.latitude)/2, (p1.longitude + p2.longitude)/2);
+      
+      legs.add(LegData(
+        start: p1, 
+        end: p2, 
+        bearing: (bearing + 360) % 360, 
+        distanceNm: distM / 1852.0, 
+        midPoint: mid,
+        endWptId: _activeRoutePoints[i+1].name ?? _activeRoutePoints[i+1].id
+      ));
+    }
+    
+    return legs;
+  }
+
+  // --- UI: Aircraft Marker ---
+  Marker _buildAircraftMarker() {
+    if (_currentPosition == null) return Marker(point: const LatLng(0,0), child: const SizedBox());
+    
+    return Marker(
+      point: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+      width: 40,
+      height: 40,
+      child: Transform.rotate(
+        angle: (_currentPosition!.heading) * (pi / 180),
+        child: CustomPaint(
+          painter: NavigraphArrowPainter(),
+        ),
+      ),
+    );
+  }
+
+  // --- Route Logic Helpers ---
+  // ... (unchanged methods: _getAirportActionStats, _findBestInsertionIndex, _simulateCompareStats, _executeDirectTo, _setDestinationTruncate, _addStopover, _insertWaypoint, _removePoint, _showRouteOptions, _showAirportQuickView, _showDetailedAnalysis, _getCategoryColorHex)
+  // ... (unchanged methods: _startEmergencyFlow, _processEmergency, _parseHexColor, _updateAirportLayer, _buildAirportMarker, _initLocationService, _calculateDestinationPoint, _scanTerrainSurroundings, _allPolygons, _getVisibleFeatures, _parseAltitudeRange, _fetchWeatherData, _toggleWeatherLayer, _processGeometry, _parsePolygonCoordinates, _getWeatherColor, _handleMapTap, isPointInPolygon, _analyzeHazardsWithGemini, _getAiSummary)
+  
+  // Re-adding logic helpers to ensure file integrity when using write_file
+  Map<String, double> _getAirportActionStats(Airport airport) {
+    final latLng = LatLng(airport.lat, airport.lon);
+    final stats = _simulateCompareStats(RoutePoint(id: airport.ident, point: latLng, type: 'airport'));
+    return {
+        'direct': stats['direct_total'] ?? 0.0,
+        'stopover': stats['insert_total'] ?? 0.0,
+        'divert': stats['truncate_total'] ?? 0.0
+    };
+  }
+  
+  int _findBestInsertionIndex(LatLng newPoint) {
+    if (_activeRoutePoints.isEmpty) return 0;
+    
+    final Distance distCalc = const Distance();
+    double minIncrease = double.infinity;
+    int bestIndex = _activeRoutePoints.length; 
+
+    for (int i = 0; i < _activeRoutePoints.length - 1; i++) {
+      final p1 = _activeRoutePoints[i].point;
+      final p2 = _activeRoutePoints[i + 1].point;
+
+      final double originalDist = distCalc.as(LengthUnit.Meter, p1, p2);
+      final double newDist = distCalc.as(LengthUnit.Meter, p1, newPoint) + 
+                             distCalc.as(LengthUnit.Meter, newPoint, p2);
+      
+      final double increase = newDist - originalDist;
+
+      if (increase < minIncrease) {
+        minIncrease = increase;
+        bestIndex = i + 1;
+      }
+    }
+    return bestIndex;
+  }
+
+  Map<String, double> _simulateCompareStats(RoutePoint target) {
+    final Distance distCalc = const Distance();
+    
+    LatLng startPos;
+    if (_currentPosition != null) {
+      startPos = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
+    } else if (_activeRoutePoints.isNotEmpty) {
+      startPos = _activeRoutePoints.first.point;
+    } else {
+      return {'insert_total': 0.0, 'direct_total': 0.0, 'truncate_total': 0.0};
+    }
+
+    double calcDist(List<RoutePoint> points) {
+        double total = 0.0;
+        LatLng prev = startPos;
+        for (var p in points) {
+            total += distCalc.as(LengthUnit.Meter, prev, p.point);
+            prev = p.point;
+        }
+        return total / 1852.0;
+    }
+
+    List<RoutePoint> insertRoute = List.from(_activeRoutePoints);
+    double insertTotal = double.infinity;
+    if (insertRoute.isEmpty) {
+        insertTotal = distCalc.as(LengthUnit.Meter, startPos, target.point) / 1852.0;
+    } else {
+         for (int i = 0; i <= insertRoute.length; i++) {
+             List<RoutePoint> temp = List.from(insertRoute);
+             temp.insert(i, target);
+             double d = calcDist(temp);
+             if (d < insertTotal) insertTotal = d;
+         }
+    }
+
+    List<RoutePoint> directRoute = [];
+    directRoute.add(target);
+    
+    int splitIndex = _activeRoutePoints.indexWhere((p) => p.id == target.id);
+    int tailStartIndex = (splitIndex == -1) ? _findBestInsertionIndex(target.point) : splitIndex + 1;
+    
+    if (tailStartIndex < _activeRoutePoints.length) {
+        directRoute.addAll(_activeRoutePoints.sublist(tailStartIndex));
+    }
+    double directTotal = calcDist(directRoute);
+
+    List<RoutePoint> truncateRoute = List.from(_activeRoutePoints);
+    int truncIndex = _findBestInsertionIndex(target.point);
+    if (truncIndex < truncateRoute.length) {
+        truncateRoute = truncateRoute.take(truncIndex).toList();
+    }
+    truncateRoute.add(target);
+    double truncateTotal = calcDist(truncateRoute);
+
+    return {
+      'insert_total': insertTotal,
+      'direct_total': directTotal,
+      'truncate_total': truncateTotal,
+    };
+  }
+  
+  void _executeDirectTo(RoutePoint target) {
+    List<RoutePoint> newRoute = [];
+    if (_currentPosition != null) {
+      newRoute.add(RoutePoint(
+        id: "ACTUAL", 
+        point: LatLng(_currentPosition!.latitude, _currentPosition!.longitude), 
+        type: 'virtual',
+        name: "ACTUAL POS"
+      ));
+    }
+    newRoute.add(target);
+    int splitIndex = _activeRoutePoints.indexWhere((p) => p.id == target.id);
+    int tailStartIndex = (splitIndex == -1) ? _findBestInsertionIndex(target.point) : splitIndex + 1;
+    if (tailStartIndex < _activeRoutePoints.length) {
+      newRoute.addAll(_activeRoutePoints.sublist(tailStartIndex));
+    }
+    setState(() {
+      _activeRoutePoints = newRoute;
+    });
+  }
+
+  void _setDestinationTruncate(RoutePoint point) {
+    setState(() {
+      int index = _findBestInsertionIndex(point.point);
+      if (index < _activeRoutePoints.length) {
+        _activeRoutePoints = _activeRoutePoints.take(index).toList();
+      }
+      _activeRoutePoints.add(RoutePoint(id: point.id, point: point.point, type: 'destination', name: point.name));
+    });
+  }
+
+  void _addStopover(Airport airport) {
+    setState(() {
+      final latLng = LatLng(airport.lat, airport.lon);
+      int index = _findBestInsertionIndex(latLng);
+      if (index > _activeRoutePoints.length) index = _activeRoutePoints.length;
+      _activeRoutePoints.insert(index, RoutePoint(id: airport.ident, point: latLng, type: 'waypoint', name: airport.name));
+    });
+  }
+
+  void _insertWaypoint(RoutePoint target) {
+      setState(() {
+        int index = _findBestInsertionIndex(target.point);
+        if (index > _activeRoutePoints.length) index = _activeRoutePoints.length;
+        _activeRoutePoints.insert(index, target);
+      });
+  }
+
+  void _removePoint(String id) {
+    setState(() {
+      _activeRoutePoints.removeWhere((p) => p.id == id);
+    });
+  }
+  
+  void _showRouteOptions(BuildContext context, RoutePoint routePoint) {
+    bool isInRoute = _activeRoutePoints.any((rp) => rp.id == routePoint.id);
+    final stats = _simulateCompareStats(routePoint);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A1A2F).withOpacity(0.95),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(top: BorderSide(color: Colors.white.withOpacity(0.2))),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                routePoint.name ?? routePoint.id,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const Divider(color: Colors.white24, height: 32),
+              
+              if (isInRoute) 
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent.withOpacity(0.2),
+                      foregroundColor: Colors.redAccent,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      side: const BorderSide(color: Colors.redAccent),
+                    ),
+                    onPressed: () {
+                      _removePoint(routePoint.id);
+                      Navigator.pop(ctx);
+                    },
+                    icon: const Icon(Icons.remove_circle_outline),
+                    label: const Text("Remove from Route"),
+                  ),
+                ),
+              
+              const SizedBox(height: 12),
+              SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.purpleAccent.withOpacity(0.2),
+                      foregroundColor: Colors.purpleAccent,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      side: const BorderSide(color: Colors.purpleAccent),
+                    ),
+                    onPressed: () {
+                      _executeDirectTo(routePoint);
+                      Navigator.pop(ctx);
+                    },
+                    icon: const Icon(Icons.near_me),
+                    label: Column(
+                      children: [
+                        const Text("Direct To (From Here)", style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text("Total: ${stats['direct_total']!.toStringAsFixed(1)} NM", style: const TextStyle(fontSize: 10, color: Colors.white70)),
+                      ],
+                    ),
+                  ),
+                ),
+
+              if (!isInRoute) ...[
+                 const SizedBox(height: 12),
+                 SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blueAccent.withOpacity(0.2),
+                      foregroundColor: Colors.blueAccent,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      side: const BorderSide(color: Colors.blueAccent),
+                    ),
+                    onPressed: () {
+                      _insertWaypoint(routePoint);
+                      Navigator.pop(ctx);
+                    },
+                     icon: const Icon(Icons.add_location_alt),
+                     label: Column(
+                        children: [
+                          const Text("Insert Waypoint", style: TextStyle(fontWeight: FontWeight.bold)),
+                          Text("Total: ${stats['insert_total']!.toStringAsFixed(1)} NM", style: const TextStyle(fontSize: 10, color: Colors.white70)),
+                        ],
+                      ),
+                  ),
+                ),
+                
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.greenAccent.withOpacity(0.2),
+                      foregroundColor: Colors.greenAccent,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      side: const BorderSide(color: Colors.greenAccent),
+                    ),
+                    onPressed: () {
+                      _setDestinationTruncate(routePoint);
+                      Navigator.pop(ctx);
+                    },
+                     icon: const Icon(Icons.flag),
+                     label: Column(
+                        children: [
+                          const Text("Set as Destination", style: TextStyle(fontWeight: FontWeight.bold)),
+                          Text("Total: ${stats['truncate_total']!.toStringAsFixed(1)} NM", style: const TextStyle(fontSize: 10, color: Colors.white70)),
+                        ],
+                      ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      }
+    );
+  }
+  
+  void _showAirportQuickView(BuildContext context, Airport airport) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AirportStatusPopup(
+          airport: airport,
+          onRoute: () {
+            Navigator.pop(ctx);
+            _showRouteOptions(context, RoutePoint(
+              id: airport.ident,
+              point: LatLng(airport.lat, airport.lon),
+              type: 'airport',
+              name: airport.name
+            ));
+          },
+          onAnalyze: () {
+            Navigator.pop(ctx);
+            _showDetailedAnalysis(context, airport);
+          },
+        );
+      },
+    );
+  }
+
+  void _showDetailedAnalysis(BuildContext context, Airport airport) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => AirportDetailSheet(
+        icao: airport.ident, 
+        aiModel: _model
+      ),
+    );
+  }
+  
+  String _getCategoryColorHex(String category) {
+    switch (category.toUpperCase()) {
+      case 'VFR': return '#10B981'; 
+      case 'MVFR': return '#3B82F6';
+      case 'IFR': return '#EF4444';
+      case 'LIFR': return '#D946EF';
+      default: return '#808080';
+    }
   }
 
   Future<void> _startEmergencyFlow() async {
@@ -119,8 +563,8 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
       return;
     }
 
-    String aircraftType = "Cessna 172S"; // Default
-    String emergencyType = "Engine Failure"; // Default
+    String aircraftType = "Cessna 172S"; 
+    String emergencyType = "Engine Failure"; 
     String customEmergencyText = "";
 
     await showDialog(
@@ -219,54 +663,79 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
 
   Future<void> _processEmergency(String acType, String emType) async {
     if (_currentPosition == null) return;
+    
+    if (mounted) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Analyzing Emergency Route...")));
+    }
 
     try {
-      final data = await AiEmergencyService.findBestEmergencyLanding(
+      final candidates = AirportDatabaseService().getNearestAirports(
+        _currentPosition!.latitude, 
+        _currentPosition!.longitude, 
+        10
+      );
+
+      if (candidates.isEmpty) {
+         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No airports found nearby!")));
+         return;
+      }
+
+      final aiResult = await AiEmergencyService.calculateEmergencyRoute(
         lat: _currentPosition!.latitude,
         lon: _currentPosition!.longitude,
         alt: _currentAltitudeFeet ?? 0,
+        heading: _currentPosition!.heading,
         aircraftType: acType,
         emergencyType: emType,
+        candidates: candidates,
         model: _model!,
       );
 
-      final airport = data['recommended_airport'];
-      if (airport != null) {
-        final destLat = (airport['lat'] as num).toDouble();
-        final destLon = (airport['lon'] as num).toDouble();
+      final coords = aiResult['coordinates'];
+      if (coords != null) {
+        final destLat = (coords['lat'] as num).toDouble();
+        final destLon = (coords['lon'] as num).toDouble();
         
-        // Parse route if available
-        List<LatLng> routePoints = [];
-        if (data.containsKey('route') && data['route'] is List) {
-          for (var pt in data['route']) {
-            if (pt['lat'] != null && pt['lon'] != null) {
-              routePoints.add(LatLng((pt['lat'] as num).toDouble(), (pt['lon'] as num).toDouble()));
-            }
-          }
-        }
+        final Distance distCalc = const Distance();
+        final LatLng currentPos = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
+        final LatLng target = LatLng(destLat, destLon);
+
+        final double distMeters = distCalc.as(LengthUnit.Meter, currentPos, target);
+        final double distNm = distMeters / 1852.0;
+
+        final double rawBearing = distCalc.bearing(currentPos, target);
+        final double normalizedBearing = (rawBearing + 360) % 360;
+
+        double speedKts = (_currentPosition!.speed) * 1.94384;
+        if (speedKts < 10) speedKts = 100; 
         
-        // Fallback to direct line if no route returned or less than 2 points
-        if (routePoints.length < 2) {
-             routePoints = [
-                LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
-                LatLng(destLat, destLon)
-             ];
-        }
+        double timeHours = distNm / speedKts;
+        int eteMinutes = (timeHours * 60).round();
+
+        aiResult['navigation'] = {
+          'distance_nm': double.parse(distNm.toStringAsFixed(1)), 
+          'bearing_to': normalizedBearing.round(),
+          'ete_minutes': eteMinutes,
+          'target_id': aiResult['selected_airport_id']
+        };
+
+        List<LatLng> routePoints = [
+            LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+            LatLng(destLat, destLon)
+        ];
 
         setState(() {
           _isEmergencyMode = true;
-          _emergencyData = data;
+          _emergencyData = aiResult; 
           _emergencyRoute = routePoints;
         });
         
-        // Hide Nav Bar
         widget.onEmergencyStateChanged?.call(true);
 
-        // Zoom map to show path
         widget.mapController?.fitCamera(
           CameraFit.bounds(
             bounds: LatLngBounds.fromPoints(_emergencyRoute),
-            padding: const EdgeInsets.all(50),
+            padding: const EdgeInsets.all(80),
           ),
         );
       }
@@ -289,46 +758,41 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     }
   }
 
-  // --- NEW AIRPORT LOGIC ---
-
   Future<void> _updateAirportLayer() async {
     if (!_showAirports) return;
 
-    // 1. Get Visible Bounds
     final bounds = widget.mapController?.camera.visibleBounds;
     if (bounds == null) return;
 
-    // 2. Query Local Database
     final visibleAirports = AirportDatabaseService().getAirportsInBounds(bounds);
     
-    // Limit to reasonable number
     final limitedAirports = visibleAirports.take(20).toList();
 
-    // 3. Render Initial Markers (Instant)
     if (mounted) {
       setState(() {
         _airportMarkers = limitedAirports.map((airport) => _buildAirportMarker(airport)).toList();
       });
     }
 
-    // 4. Call AI Grading (Async)
-    if (_model != null && limitedAirports.isNotEmpty) {
+    if (limitedAirports.isNotEmpty) {
+      final codes = limitedAirports.map((a) => a.ident).toList();
       try {
-        final grades = await AiGradingService.gradeAirports(limitedAirports, _model!);
+        final categories = await WeatherService.getFlightCategories(codes);
         
         if (mounted && _showAirports) {
           setState(() {
             _airportMarkers = limitedAirports.map((airport) {
-              if (grades.containsKey(airport.ident)) {
-                airport.riskColor = grades[airport.ident]!['color'];
-                airport.riskReason = grades[airport.ident]!['reason'];
+              final category = categories[airport.ident];
+              if (category != null) {
+                airport.riskColor = _getCategoryColorHex(category);
+                airport.riskReason = category;
               }
               return _buildAirportMarker(airport);
             }).toList();
           });
         }
       } catch (e) {
-        print("AI Grading Error: $e");
+        print("Error fetching flight categories: $e");
       }
     }
   }
@@ -348,15 +812,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
       height: 80,
       child: GestureDetector(
         onTap: () {
-          showModalBottomSheet(
-            context: context,
-            backgroundColor: Colors.transparent,
-            isScrollControlled: true,
-            builder: (ctx) => AirportDetailSheet(
-              icao: airport.ident,
-              aiModel: _model,
-            ),
-          );
+          _showAirportQuickView(context, airport);
         },
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -381,8 +837,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     );
   }
 
-  // --- END NEW AIRPORT LOGIC ---
-
   Future<void> _initLocationService() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -405,8 +859,8 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     } 
 
     const LocationSettings locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 10,
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 0,
     );
     
     _positionStream = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
@@ -415,17 +869,17 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
         
         setState(() {
           _currentPosition = position;
-          _currentAltitudeFeet = position.altitude * 3.28084; // Convert meters to feet
+          _currentAltitudeFeet = position.altitude * 3.28084;
           _altitudeController.text = _currentAltitudeFeet!.toStringAsFixed(0);
         });
         
-        // Auto-center map on plane
-        widget.mapController?.move(
-          LatLng(position.latitude, position.longitude), 
-          widget.mapController?.camera.zoom ?? 6.0
-        );
+        if (!_isEmergencyMode) {
+          widget.mapController?.move(
+            LatLng(position.latitude, position.longitude), 
+            widget.mapController?.camera.zoom ?? 6.0
+          );
+        }
 
-        // Terrain Check (Throttle 5s)
         final now = DateTime.now();
         if (_lastTerrainCheck == null || now.difference(_lastTerrainCheck!).inSeconds >= 5) {
           _lastTerrainCheck = now;
@@ -439,9 +893,8 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     );
   }
 
-  /// Calculates a destination point given start point, distance (meters), and bearing (degrees).
   LatLng _calculateDestinationPoint(LatLng start, double distanceMeters, double bearingDegrees) {
-    const double radiusEarth = 6371000; // Earth radius in meters
+    const double radiusEarth = 6371000; 
     final double distRatio = distanceMeters / radiusEarth;
     final double bearingRad = degToRadian(bearingDegrees);
     final double startLatRad = degToRadian(start.latitude);
@@ -458,37 +911,30 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   }
 
   Future<void> _scanTerrainSurroundings(LatLng planePos, double planeAltFeet) async {
-    final List<LatLng> probePoints = [planePos]; // Always check current pos
+    final List<LatLng> probePoints = [planePos]; 
     
-    // Step 1: Get Current Zoom Level
     final double currentZoom = widget.mapController?.camera.zoom ?? 6.0;
 
-    // Step 2: Define Dynamic Sampling Strategy
     List<double> distances;
     int angleStep;
 
     if (currentZoom > 13.0) {
-      // High Zoom (> 13.0, Close view): Max detail.
-      distances = [5000, 15000, 30000, 50000]; // Meters
-      angleStep = 45; // 8 directions
+      distances = [5000, 15000, 30000, 50000]; 
+      angleStep = 45; 
     } else if (currentZoom >= 10.0) {
-      // Medium Zoom (10.0 - 13.0): Balanced.
       distances = [20000, 50000];
-      angleStep = 60; // 6 directions
+      angleStep = 60; 
     } else {
-      // Low Zoom (< 10.0, Wide view): Minimal detail.
       distances = [50000];
-      angleStep = 90; // 4 cardinal directions
+      angleStep = 90; 
     }
 
-    // Step 3: Generate Probe Points
     for (final dist in distances) {
       for (int bearing = 0; bearing < 360; bearing += angleStep) {
         probePoints.add(_calculateDestinationPoint(planePos, dist, bearing.toDouble()));
       }
     }
 
-    // Parallel Execution
     final List<Future<double?>> futures = probePoints
         .map((p) => _terrainService.getElevationFeet(p.latitude, p.longitude))
         .toList();
@@ -513,26 +959,20 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     });
   }
 
-  // Getter flattens the map of features into a single list of polygons for rendering.
-  // Now uses _getVisibleFeatures instead of direct access
   List<Polygon> get _allPolygons =>
       _getVisibleFeatures().map((f) => f.polygon).toList();
 
   List<WeatherFeature> _getVisibleFeatures() {
-    // Flatten all features from all active layers into a single list.
     final allFeatures = _activeLayers.values.expand((features) => features).toList();
 
-    // Condition A: Show all data if override is on.
     if (_showFullData) {
       return allFeatures;
     }
 
-    // If no GPS fix yet, behave as if "Full Data" is ON (or show all).
     if (_currentPosition == null || _currentAltitudeFeet == null) {
       return allFeatures;
     }
 
-    // Condition B & C: Filter based on Altitude AND Distance.
     final altitude = _currentAltitudeFeet!;
     final aircraftLatLng = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
     const distanceCalc = Distance();
@@ -540,23 +980,19 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     final List<WeatherFeature> filteredFeatures = [];
 
     for (final feature in allFeatures) {
-      // 1. Altitude Check
       final (base, top) = _parseAltitudeRange(feature.rawProperties);
       if (altitude < base || altitude > top) {
-        continue; // Skip if altitude mismatch
+        continue; 
       }
       
-      // 2. Distance Check (50km)
-      // Check if inside polygon
       if (isPointInPolygon(aircraftLatLng, feature.polygon.points)) {
           filteredFeatures.add(feature);
           continue;
       }
       
-      // Check distance to any vertex
       bool isWithinRange = false;
       for (final point in feature.polygon.points) {
-          if (distanceCalc.as(LengthUnit.Meter, aircraftLatLng, point) <= 50000) { // 50km
+          if (distanceCalc.as(LengthUnit.Meter, aircraftLatLng, point) <= 50000) { 
               isWithinRange = true;
               break;
           }
@@ -583,30 +1019,24 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
       return defaultValue;
     }
 
-    // Base: base/base_ft. "SFC" or missing => 0.
     final baseStr = extractString(['base', 'base_ft', 'from', 'low'], 'SFC');
-    // Top: top/top_ft. Missing/"MSL" => 60000.
     final topStr = extractString(['top', 'top_ft', 'to', 'high'], 'MSL');
 
     int parseAltString(String altStr, {required bool isTop}) {
       final s = altStr.trim().toUpperCase();
 
-      // Base rules
       if (!isTop) {
         if (s == 'SFC' || s == 'GND') return 0;
       }
 
-      // Top rules
       if (isTop) {
         if (s == 'MSL' || s == 'TOP' || s == 'UNL' || s == 'UNLIMITED') return 60000;
       }
 
-      // Remove any non-numeric characters (e.g., "FL180", "18000FT")
       final numeric = RegExp(r'\d+').stringMatch(s);
       final intValue = numeric == null ? null : int.tryParse(numeric);
 
       if (intValue != null) {
-        // Handle aviation shorthand like "030" => 3000, "180" => 18000
         if (intValue < 1000) return intValue * 100;
         return intValue;
       }
@@ -621,7 +1051,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   }
 
   Future<void> _fetchWeatherData(String type) async {
-    // Define URIs based on type
     final uris = <Uri>[];
     switch (type.toLowerCase()) {
        case 'conv': uris.add(Uri.parse('https://aviationweather.gov/api/data/airsigmet?format=geojson&types=sigmet&hazard=conv')); break;
@@ -678,7 +1107,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
       return;
     }
     
-    // NEW: Airport Toggle
     if (type == "Airports") {
       setState(() {
         _showAirports = !_showAirports;
@@ -697,9 +1125,8 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
       return;
     }
 
-    // Adding layer
     setState(() {
-       _activeLayers[type] = []; // Optimistic
+       _activeLayers[type] = []; 
     });
     
     await _fetchWeatherData(type);
@@ -713,50 +1140,16 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     final rawCoords = geometry['coordinates'];
     final rawType = geometry['type'].toString();
 
-    // --- CONSOLE LOGGING ---
-    String hazard = rawProps['hazard'] ?? rawProps['label'] ?? rawProps['type'] ?? 'Unknown';
-    String top = "${rawProps['top'] ?? rawProps['top_ft'] ?? rawProps['to'] ?? '?'}";
-    String base = "${rawProps['base'] ?? rawProps['base_ft'] ?? rawProps['from'] ?? 'SFC'}";
-
-    // 1. Flatten coordinates to handle both Polygon and MultiPolygon
     List allPoints = [];
     if (rawType.toLowerCase() == 'polygon' && rawCoords is List && rawCoords.isNotEmpty) {
-      allPoints = rawCoords[0]; // First ring
+      allPoints = rawCoords[0]; 
     } else if (rawType.toLowerCase() == 'multipolygon' && rawCoords is List) {
       for (var poly in rawCoords) {
         if (poly is List && poly.isNotEmpty) {
-          allPoints.addAll(poly[0]); // Flatten all rings
+          allPoints.addAll(poly[0]); 
         }
       }
     }
-
-    // 2. Calculate Bounds
-    double minLat = 90.0, maxLat = -90.0;
-    double minLon = 180.0, maxLon = -180.0;
-
-    if (allPoints.isNotEmpty) {
-      for (var pt in allPoints) {
-        if (pt is List && pt.length >= 2) {
-          // GeoJSON is [Lon, Lat]
-          double lon = (pt[0] as num).toDouble();
-          double lat = (pt[1] as num).toDouble();
-
-          minLat = min(minLat, lat);
-          maxLat = max(maxLat, lat);
-          minLon = min(minLon, lon);
-          maxLon = max(maxLon, lon);
-        }
-      }
-    }
-
-    // 3. Log the "Area"
-    print("☁️ [Loaded] $hazard");
-    if (allPoints.isNotEmpty) {
-      print(" 🗺️ Area Bounds: [${minLat.toStringAsFixed(2)}, ${minLon.toStringAsFixed(2)}] ⬌ [${maxLat.toStringAsFixed(2)}, ${maxLon.toStringAsFixed(2)}]");
-    }
-    print(" ↕️ Altitude: $base - $top");
-    print("--------------------------------------------------");
-    // --- END LOGGING ---
 
     final type = geometry['type'].toString().toLowerCase();
     if (type == 'polygon') {
@@ -801,25 +1194,17 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   }
 
   void _handleMapTap(LatLng tappedPoint) {
-    // 1. Get only the features that are currently visible on the map.
     final visibleFeatures = _getVisibleFeatures();
     final List<WeatherFeature> hitFeatures = [];
 
-    // 2. Iterate ONLY through the visible features.
     for (final feature in visibleFeatures) {
-      // 3. Mathematical Check: Is the point inside this polygon?
       if (isPointInPolygon(tappedPoint, feature.polygon.points)) {
-        hitFeatures.add(feature); // Add to list (Collision detected!)
+        hitFeatures.add(feature); 
       }
     }
 
-    // 4. Trigger AI if we hit any of the VISIBLE polygons.
     if (hitFeatures.isNotEmpty) {
-      print("⚡️ Tap Hit ${hitFeatures.length} layers. Triggering Co-Pilot...");
-      // Pass the full list (including overlaps) to Gemini
       _analyzeHazardsWithGemini(hitFeatures);
-    } else {
-      print("📍 Tap on clear airspace (No visible data found).");
     }
   }
 
@@ -956,7 +1341,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   }
 
   Widget _buildStatusPill() {
-    // IF EMERGENCY IS ACTIVE, SHOW RED STATUS
     if (_isEmergencyMode) {
       return AnimatedBuilder(
         animation: _flashController!,
@@ -1081,7 +1465,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     );
   }
   
-  // ADDED: Zoom Controls
   Widget _buildZoomControls() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
@@ -1134,38 +1517,62 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   }
 
   List<Marker> _buildRouteMarkers() {
-    if (widget.routePoints.isEmpty) return [];
+    if (_activeRoutePoints.isEmpty) return [];
 
-    return widget.routePoints.asMap().entries.map((entry) {
-      final index = entry.key;
-      final rp = entry.value;
-      final isAirport = index == 0 || index == widget.routePoints.length - 1;
-
+    return _activeRoutePoints.map((rp) {
       return Marker(
         point: rp.point,
-        width: 100,
-        height: 60,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              isAirport ? Icons.local_airport : Icons.circle,
-              size: isAirport ? 24 : 8,
-              color: isAirport ? Colors.cyanAccent : Colors.grey,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              rp.id,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                shadows: [Shadow(blurRadius: 2, color: Colors.black)],
+        width: 120.0,
+        height: 60.0,
+        alignment: Alignment.center,
+        child: GestureDetector(
+          onTap: () {
+            _showRouteOptions(context, rp);
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // 1. The Label
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.white24, width: 0.5),
+                ),
+                child: Text(
+                  rp.name ?? rp.id, 
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+              const SizedBox(height: 2),
+              
+              // 2. The Dot
+              Container(
+                width: 12, 
+                height: 12,
+                decoration: BoxDecoration(
+                  color: Colors.cyanAccent,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.black, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.cyanAccent.withOpacity(0.5), 
+                      blurRadius: 6,
+                      spreadRadius: 1
+                    )
+                  ]
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }).toList();
@@ -1180,6 +1587,21 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
         ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
         : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
 
+    // Calculate Route Stats for UI
+    final legData = _calculateLegStats();
+    
+    // Calculate Global Stats
+    double totalDist = 0;
+    for (var leg in legData) { totalDist += leg.distanceNm; }
+    
+    double gsKts = (_currentPosition?.speed ?? 0) * 1.94384;
+    if (gsKts < 10) gsKts = 0; // Show 0 if barely moving
+    
+    double eteMinutes = 0;
+    if (gsKts > 5) {
+      eteMinutes = (totalDist / gsKts) * 60;
+    }
+
     return Scaffold(
       backgroundColor: isDark ? Colors.black : const Color(0xFFF0F2F5),
       body: Stack(
@@ -1191,19 +1613,23 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
               initialZoom: 6.0,
               interactionOptions: const InteractionOptions(flags: InteractiveFlag.all),
               onTap: (_, point) => _handleMapTap(point),
+              onLongPress: (tapPos, latLng) {
+                // Generate a temporary ID
+                String newId = "USR-${DateTime.now().millisecondsSinceEpoch % 1000}"; 
+                final rp = RoutePoint(id: newId, point: latLng, type: 'waypoint', name: newId);
+                _showRouteOptions(context, rp);
+              },
               onPositionChanged: (position, hasGesture) {
                 if (hasGesture) {
                   _mapDebounce?.cancel();
                   _mapDebounce = Timer(const Duration(milliseconds: 500), () {
                     if (!mounted) return;
                     
-                    // Terrain Check
                     if (_currentPosition != null && _currentAltitudeFeet != null && _showTerrainAnalysis) {
                       final planePos = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
                       _scanTerrainSurroundings(planePos, _currentAltitudeFeet!);
                     }
                     
-                    // NEW: Airport Check
                     if (_showAirports) {
                       _updateAirportLayer();
                     }
@@ -1217,26 +1643,23 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
                 subdomains: const ['a', 'b', 'c'],
                 userAgentPackageName: 'com.andy.skyaware',
               ),
-               // Draw the weather polygons
               PolygonLayer(
-                polygons: _allPolygons, // Using local active layers
+                polygons: _allPolygons, 
               ),
 
-              // Draw the flight route on top of the weather
-              if (widget.routePoints.isNotEmpty)
+              if (_activeRoutePoints.isNotEmpty)
                 PolylineLayer<Object>(
                   polylines: [
                     Polyline<Object>(
-                      points: widget.routePoints.map((rp) => rp.point).toList(),
+                      points: _activeRoutePoints.map((rp) => rp.point).toList(),
                       strokeWidth: 4.0,
-                      color: Colors.blueAccent, // High-visibility color
+                      color: Colors.cyanAccent.withOpacity(0.8), // Matches dot color
                       borderColor: Colors.black.withOpacity(0.5),
                       borderStrokeWidth: 1.0,
                     ),
                   ],
                 ),
               
-              // NEW: EMERGENCY ROUTE LAYER (RED)
               if (_isEmergencyMode && _emergencyRoute.isNotEmpty)
                 PolylineLayer<Object>(
                   polylines: [
@@ -1251,29 +1674,16 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
                   ],
                 ),
                 
-              if (widget.routePoints.isNotEmpty)
+              if (_activeRoutePoints.isNotEmpty)
                 MarkerLayer(markers: _buildRouteMarkers()),
 
               if (_currentPosition != null)
                 MarkerLayer(
                   markers: [
-                    Marker(
-                      point: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
-                      width: 40,
-                      height: 40,
-                      child: Transform.rotate(
-                        angle: (_currentPosition!.heading) * (pi / 180), // Convert to radians
-                        child: const Icon(
-                          Icons.airplanemode_active,
-                          color: Colors.greenAccent,
-                          size: 30,
-                        ),
-                      ),
-                    ),
+                    _buildAircraftMarker(), 
                   ],
                 ),
                 
-              // Terrain Hazard Marker Layer (Interactive)
               if (_showTerrainAnalysis)
                 MarkerLayer(
                   markers: _activeHazards.map((hazard) => Marker(
@@ -1335,12 +1745,10 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
                   )).toList(),
                 ),
 
-              // AI Airport Markers Layer
               if (_airportMarkers.isNotEmpty)
                 MarkerLayer(markers: _airportMarkers),
             ],
           ),
-          // Vignette for cockpit feel
           IgnorePointer(
             child: Container(
               decoration: BoxDecoration(
@@ -1354,9 +1762,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
             ),
           ),
           
-          // --- NEW MODERN HUD LAYOUT ---
-          
-          // 1. Top-Left Back Button (OR MAYDAY BUTTON)
           if (!_isEmergencyMode)
             Positioned(
               top: 60, 
@@ -1364,7 +1769,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
               child: _buildBackButton(),
             ),
           
-          // NEW: MAYDAY BUTTON (Next to back button)
           if (!_isEmergencyMode)
             Positioned(
               top: 60,
@@ -1386,7 +1790,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
               ),
             ),
 
-          // 2. Top-Center Status
           Positioned(
             top: 60, 
             left: 0, 
@@ -1394,14 +1797,12 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
             child: Center(child: _buildStatusPill()),
           ),
 
-          // 3. Top-Right Altitude HUD
           Positioned(
             top: 60, 
             right: 16,
             child: _buildAltitudeHUD(),
           ),
 
-          // 4. Side Menu (Moved down to clear HUD)
           if (!_isEmergencyMode)
             CollapsibleLayerMenu(
               onToggleLayer: _toggleWeatherLayer,
@@ -1430,15 +1831,13 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
               },
             ),
           
-          // 5. Zoom Controls (Bottom Right)
           if (!_isEmergencyMode)
             Positioned(
               right: 16,
-              top: MediaQuery.of(context).size.height / 2 - 60,
+              bottom: 100, // Adjusted to sit above Flight Panel
               child: _buildZoomControls(),
             ),
           
-          // 6. EMERGENCY OVERLAY (Highest z-index)
           if (_isEmergencyMode && _emergencyData != null)
             Positioned(
               left: 0, 
@@ -1458,8 +1857,191 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
                 },
               ),
             ),
+            
+          if (!_isEmergencyMode)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: FlightInfoPanel(
+                gsKts: gsKts,
+                track: _currentPosition?.heading ?? 0,
+                dtgNm: totalDist,
+                eteMinutes: eteMinutes,
+                legs: legData,
+              ),
+            ),
         ],
       ),
     );
+  }
+}
+
+// --- NEW: Navigraph Arrow Painter ---
+class NavigraphArrowPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint fillPaint = Paint()
+      ..color = Colors.cyanAccent
+      ..style = PaintingStyle.fill;
+
+    final Paint borderPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    final Path path = Path();
+    // Draw a sharp arrow pointing UP (0 degrees)
+    path.moveTo(size.width / 2, 0); // Tip
+    path.lineTo(size.width, size.height); // Bottom Right
+    path.lineTo(size.width / 2, size.height * 0.8); // Indent at bottom (Stealth shape)
+    path.lineTo(0, size.height); // Bottom Left
+    path.close();
+
+    canvas.drawPath(path, fillPaint);
+    canvas.drawPath(path, borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// --- NEW: Flight Info Panel Widget ---
+class FlightInfoPanel extends StatefulWidget {
+  final double gsKts;
+  final double track;
+  final double dtgNm;
+  final double eteMinutes;
+  final List<LegData> legs;
+
+  const FlightInfoPanel({
+    super.key,
+    required this.gsKts,
+    required this.track,
+    required this.dtgNm,
+    required this.eteMinutes,
+    required this.legs,
+  });
+
+  @override
+  State<FlightInfoPanel> createState() => _FlightInfoPanelState();
+}
+
+class _FlightInfoPanelState extends State<FlightInfoPanel> with SingleTickerProviderStateMixin {
+  // Toggles between "Just Arrow" (false) and "Arrow + Row" (true)
+  bool _isDataPanelVisible = true; 
+
+  @override
+  Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    // Define Colors based on Mode
+    final backgroundColor = isDarkMode ? const Color(0xFF1E1E1E).withOpacity(0.95) : Colors.white.withOpacity(0.95);
+    final borderColor = isDarkMode ? Colors.white.withOpacity(0.1) : Colors.black12;
+    final shadowColor = isDarkMode ? Colors.black.withOpacity(0.5) : Colors.black12;
+    final iconColor = isDarkMode ? Colors.white54 : Colors.black54;
+
+    // Incorporate Safe Area for proper layout on modern phones
+    final double bottomPadding = MediaQuery.of(context).padding.bottom;
+    
+    // We remove the explicit height calculation and AnimatedContainer to avoid RenderFlex overflow.
+    // Instead, we use Container + AnimatedSize + explicit Bottom Padding inside content.
+
+    return Container(
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        border: Border(top: BorderSide(color: borderColor)),
+        boxShadow: [
+          BoxShadow(color: shadowColor, blurRadius: 10, offset: const Offset(0, -2))
+        ]
+      ),
+      child: SafeArea(
+        top: false, // Only care about bottom safe area (home indicator)
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min, // prevent column from expanding
+            children: [
+              // 1. Toggle Arrow (Replaces Handle)
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isDataPanelVisible = !_isDataPanelVisible;
+                  });
+                },
+                behavior: HitTestBehavior.opaque, // Hit test on full width
+                child: Container(
+                  width: double.infinity,
+                  height: 40,
+                  alignment: Alignment.center,
+                  child: Icon(
+                    _isDataPanelVisible ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+                    color: iconColor,
+                    size: 24,
+                  ),
+                ),
+              ),
+              
+              // 2. Data Row (Conditionally Rendered)
+              if (_isDataPanelVisible)
+                Padding(
+                  // We removed the manual 'bottomPadding' addition here because SafeArea handles it.
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12), 
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(child: _buildStatBox("GS", "${widget.gsKts.toStringAsFixed(0)}", "KT", isDarkMode)),
+                      Expanded(child: _buildStatBox("TRK", "${widget.track.round()}°", "", isDarkMode)),
+                      Expanded(child: _buildStatBox("DTG", widget.dtgNm.toStringAsFixed(1), "NM", isDarkMode)),
+                      Expanded(child: _buildStatBox("ETE", _formatDuration(widget.eteMinutes), "", isDarkMode)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatBox(String label, String value, String unit, bool isDarkMode) {
+    final labelColor = isDarkMode ? Colors.grey[500] : Colors.black54;
+    final valueColor = isDarkMode ? Colors.cyanAccent : Colors.black87;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center, // Center align to prevent overflow
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: TextStyle(color: labelColor, fontSize: 10, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 2),
+        // Use Flexible/FittedBox to ensure text scales down if too wide
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(value, style: TextStyle(color: valueColor, fontSize: 20, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+              if (unit.isNotEmpty) ...[
+                const SizedBox(width: 2),
+                Text(unit, style: TextStyle(color: valueColor, fontSize: 10, fontWeight: FontWeight.bold)),
+              ]
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatDuration(double minutes) {
+    if (minutes <= 0) return "--:--";
+    if (minutes > 99 * 60) return ">99h";
+    final h = (minutes / 60).floor();
+    final m = (minutes % 60).round();
+    return "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}";
   }
 }

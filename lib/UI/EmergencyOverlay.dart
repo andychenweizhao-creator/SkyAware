@@ -34,20 +34,22 @@ class _EmergencyOverlayState extends State<EmergencyOverlay> {
 
   @override
   Widget build(BuildContext context) {
+    // UPDATED: Read from correct keys as per instruction
     final nav = widget.data['navigation'] ?? {};
-    final airport = widget.data['recommended_airport'] ?? {};
     final plan = widget.data['action_plan'] ?? {};
     
     final bearing = nav['bearing_to']?.toString() ?? '---';
     final distance = nav['distance_nm']?.toString() ?? '--';
-    final airportId = airport['id']?.toString() ?? 'UNKNOWN';
-    final airportName = airport['name']?.toString() ?? '';
-    final rwyLength = airport['rwy_length']?.toString() ?? 'UNK';
-    final towerFreq = airport['tower_freq']?.toString() ?? '121.5';
+    final ete = nav['ete_minutes']?.toString() ?? '--';
+    final airportId = nav['target_id']?.toString() ?? widget.data['selected_airport_id']?.toString() ?? 'UNKNOWN';
+    
+    // Optional: Airport Name/Details might not be in the new JSON, falling back
+    final airportName = widget.data['reason_for_selection']?.toString() ?? ''; // Using reason as description if name missing
 
-    final phase1 = plan['phase_1_immediate'] as List? ?? [];
-    final phase2 = plan['phase_2_approach'] as List? ?? [];
-    final phase3 = plan['phase_3_landing'] as List? ?? [];
+    final phase1 = (plan['phase_1_immediate'] as List?) ?? [];
+    final phase2 = (plan['phase_2_approach'] as List?) ?? [];
+    // If phase 3 exists in response
+    final phase3 = (plan['phase_3_landing'] as List?) ?? [];
 
     return Column(
       children: [
@@ -85,9 +87,15 @@ class _EmergencyOverlayState extends State<EmergencyOverlay> {
                 ),
               ),
               if (airportName.isNotEmpty)
-                Text(
-                  airportName,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4.0),
+                  child: Text(
+                    airportName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               const SizedBox(height: 16),
               Row(
@@ -97,7 +105,7 @@ class _EmergencyOverlayState extends State<EmergencyOverlay> {
                   Container(width: 1, height: 40, color: Colors.white24),
                   _buildInstrumentValue("DISTANCE", "$distance NM", Colors.white),
                   Container(width: 1, height: 40, color: Colors.white24),
-                  _buildInstrumentValue("ETE", "${nav['time_enroute_min'] ?? '--'} MIN", Colors.white),
+                  _buildInstrumentValue("ETE", "$ete MIN", Colors.white),
                 ],
               ),
             ],
@@ -175,19 +183,26 @@ class _EmergencyOverlayState extends State<EmergencyOverlay> {
                 child: ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   children: [
-                    _buildSectionHeader("PHASE 1: IMMEDIATE", phase1, isCritical: true),
-                    ...phase1.map((item) => _buildCheckItem(item.toString())),
+                    if (phase1.isNotEmpty) ...[
+                        _buildSectionHeader("PHASE 1: IMMEDIATE", phase1, isCritical: true),
+                        ...phase1.map((item) => _buildCheckItem(item.toString())),
+                        const SizedBox(height: 16),
+                    ],
                     
-                    const SizedBox(height: 16),
-                    _buildSectionHeader("PHASE 2: APPROACH", phase2),
-                    ...phase2.map((item) => _buildCheckItem(item.toString())),
+                    if (phase2.isNotEmpty) ...[
+                        _buildSectionHeader("PHASE 2: APPROACH", phase2),
+                        ...phase2.map((item) => _buildCheckItem(item.toString())),
+                        const SizedBox(height: 16),
+                    ],
 
-                    const SizedBox(height: 16),
-                    _buildSectionHeader("PHASE 3: LANDING", phase3),
-                    ...phase3.map((item) => _buildCheckItem(item.toString())),
+                    if (phase3.isNotEmpty) ...[
+                        _buildSectionHeader("PHASE 3: LANDING", phase3),
+                        ...phase3.map((item) => _buildCheckItem(item.toString())),
+                         const SizedBox(height: 16),
+                    ],
                     
-                     const SizedBox(height: 16),
-                    _buildAirportInfo(rwyLength, towerFreq),
+                    // We might not have rwy info anymore, so optional check
+                    // _buildAirportInfo(rwyLength, towerFreq), 
                   ],
                 ),
               ),

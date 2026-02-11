@@ -4,13 +4,15 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'; // Added for compute
+import 'package:flutter/services.dart'; // Added for rootBundle
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:xml/xml.dart';
+import 'package:geolocator/geolocator.dart'; 
 
 import 'InFlightView.dart';
 import 'Maps/maps.dart';
@@ -20,9 +22,10 @@ import 'CollapsibleLayerMenu.dart';
 import '../../services/ai_airport_service.dart';
 import '../../UI/AppAnimations.dart';
 import '../../UI/AirportDetailSheet.dart';
-import '../../services/airport_database_service.dart'; // Import local DB service
-import '../../services/ai_grading_service.dart'; // Import grading service
-import '../../services/weather_service.dart'; // Import WeatherService
+import '../../UI/AirportStatusPopup.dart'; 
+import '../../services/airport_database_service.dart'; 
+import '../../services/ai_grading_service.dart'; 
+import '../../services/weather_service.dart'; 
 
 enum AppMode { preflight, inFlight }
 
@@ -51,6 +54,7 @@ class _DashBoardState extends State<DashBoard> {
   final TextEditingController _textController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   AppMode _currentMode = AppMode.preflight;
+  Position? _currentPosition; 
 
   // Terrain Analysis
   bool _showTerrainAnalysis = false;
@@ -58,14 +62,14 @@ class _DashBoardState extends State<DashBoard> {
   final TerrainService _terrainService = TerrainService();
 
   // Local Airport Database & Grading
-  bool _showAirports = false; // State for airport layer
+  bool _showAirports = false; 
   List<Marker> _airportMarkers = [];
-  Timer? _mapDebounce; // For debouncing map moves
-  StreamSubscription? _mapEventSubscription; // Subscription for map events
+  Timer? _mapDebounce; 
+  StreamSubscription? _mapEventSubscription; 
+  Timer? _weatherTimer; 
 
   // Gemini AI Model
   GenerativeModel? _model;
-  // Use the working key from HomePage to avoid initialization errors
   final String _kGeminiApiKey = 'AIzaSyBqqjz5thRK3Lt6xQcivugnHReGkbgK9rY';
 
   @override
@@ -75,9 +79,8 @@ class _DashBoardState extends State<DashBoard> {
     if (_kGeminiApiKey.isNotEmpty && _kGeminiApiKey != 'YOUR_GEMINI_API_KEY') {
       try {
         _model = GenerativeModel(
-          model: 'gemini-3-pro-preview', // Correct exact name from user's list
+          model: 'gemini-3-pro-preview', 
           apiKey: _kGeminiApiKey,
-          // Disable Safety Settings for Flight Sim/Emergency use
           safetySettings: [
             HarmCategory.harassment,
             HarmCategory.hateSpeech,
@@ -92,7 +95,6 @@ class _DashBoardState extends State<DashBoard> {
     
     // Load Airport Database & Initial Update
     AirportDatabaseService().loadDatabase().then((_) {
-      // Trigger update if airports are enabled (or to be ready)
       if (_showAirports) {
         _updateVisibleAirports();
       }
@@ -107,16 +109,594 @@ class _DashBoardState extends State<DashBoard> {
         });
       }
     });
+    
+    _initLocationService(); 
+    _startWeatherTimer(); 
   }
 
   @override
   void dispose() {
     _mapEventSubscription?.cancel();
     _mapDebounce?.cancel();
+    _weatherTimer?.cancel();
     _textController.dispose();
     _focusNode.dispose();
     _altController.dispose();
     super.dispose();
+  }
+
+  void _startWeatherTimer() {
+    _weatherTimer = Timer.periodic(const Duration(minutes: 20), (timer) {
+      if (_showAirports) {
+        _updateVisibleAirports();
+      }
+    });
+  }
+
+  // --- NEW: Location Service ---
+  Future<void> _initLocationService() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+    
+    if (permission == LocationPermission.deniedForever) return; 
+
+    // Listen to location updates
+    Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 100)
+    ).listen((Position position) {
+      if (mounted) {
+        setState(() {
+          _currentPosition = position;
+        });
+      }
+    });
+  }
+
+  // --- NEW: Navigation Calculator ---
+  Map<String, String> _calculateNavData(LatLng targetPoint) {
+    LatLng startPoint;
+    double speedKts = 0.0;
+
+    if (_routePoints.isNotEmpty) {
+      startPoint = _routePoints.last.point;
+      // If measuring from last waypoint, assume planning speed
+      speedKts = 120.0; 
+    } else {
+      // From current position
+      if (_currentPosition == null) {
+        return {"dist": "--", "hdg": "--", "ete": "--"};
+      }
+      startPoint = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
+      speedKts = _currentPosition!.speed * 1.94384; // m/s to knots
+      // Constraint: If speed < 10 kts (stopped), assume a planning speed of 120 kts.
+      if (speedKts < 10) speedKts = 120.0;
+    }
+    
+    final Distance distanceCalc = const Distance();
+    
+    // Distance in Nautical Miles (1 NM = 1852 meters)
+    final double distMeters = distanceCalc.as(LengthUnit.Meter, startPoint, targetPoint);
+    final double distNm = distMeters / 1852.0;
+    
+    // Heading (Bearing)
+    final double bearing = distanceCalc.bearing(startPoint, targetPoint);
+    final double normalizedBearing = (bearing + 360) % 360;
+    
+    // ETE (Time) in minutes
+    // Time (hours) = Distance (NM) / Speed (kts)
+    final double timeHours = distNm / speedKts;
+    final int timeMinutes = (timeHours * 60).round();
+    
+    return {
+      "dist": "${distNm.toStringAsFixed(1)} NM",
+      "hdg": "${normalizedBearing.toStringAsFixed(0)}°",
+      "ete": "$timeMinutes min"
+    };
+  }
+
+  // --- NEW: Route Management Methods ---
+  
+  void _addWaypoint(LatLng point, String id, String type) {
+    setState(() {
+      _routePoints.add(RoutePoint(
+        id: id,
+        point: point,
+        type: type,
+        name: id // Optional name
+      ));
+    });
+  }
+
+  void _setDestination(LatLng point, String id) {
+    setState(() {
+      // If route has points, remove the old destination (if exists) or append as new last point.
+      // Assuming destination is always the last point if type is 'destination'
+      if (_routePoints.isNotEmpty && _routePoints.last.type == 'destination') {
+        _routePoints.removeLast();
+      }
+      
+      _routePoints.add(RoutePoint(
+        id: id, 
+        point: point, 
+        type: 'destination'
+      ));
+    });
+  }
+
+  void _removePoint(String id) {
+    setState(() {
+      _routePoints.removeWhere((p) => p.id == id);
+    });
+  }
+  
+  // --- NEW: EFB Logic (Insert, Direct To, Stats) ---
+
+  int _findBestInsertionIndex(LatLng newPoint) {
+    if (_routePoints.isEmpty) return 0;
+    if (_routePoints.length == 1) return 1;
+
+    final Distance distCalc = const Distance();
+    double minIncrease = double.infinity;
+    int bestIndex = _routePoints.length; // Default to end
+
+    for (int i = 0; i < _routePoints.length - 1; i++) {
+      final p1 = _routePoints[i].point;
+      final p2 = _routePoints[i + 1].point;
+
+      final double originalDist = distCalc.as(LengthUnit.Meter, p1, p2);
+      final double newDist = distCalc.as(LengthUnit.Meter, p1, newPoint) + 
+                             distCalc.as(LengthUnit.Meter, newPoint, p2);
+      
+      final double increase = newDist - originalDist;
+
+      if (increase < minIncrease) {
+        minIncrease = increase;
+        bestIndex = i + 1;
+      }
+    }
+    
+    return bestIndex;
+  }
+
+  // ----------------------------------------------------------------------
+  // NEW: Advanced Simulation Logic
+  // ----------------------------------------------------------------------
+
+  // 1. The Predictor
+  double _simulateRouteDistance(List<RoutePoint> hypotheticalRoute) {
+    if (hypotheticalRoute.isEmpty) return 0.0;
+
+    final Distance distCalc = const Distance();
+    double totalMeters = 0.0;
+    LatLng previousPoint;
+
+    // Start from current position if available, else first point
+    if (_currentPosition != null) {
+      previousPoint = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
+    } else {
+      previousPoint = hypotheticalRoute.first.point;
+    }
+
+    for (final rp in hypotheticalRoute) {
+      totalMeters += distCalc.as(LengthUnit.Meter, previousPoint, rp.point);
+      previousPoint = rp.point;
+    }
+
+    return totalMeters / 1852.0; // Convert to NM
+  }
+
+  // 2. The Brain
+  Map<String, double> _getAirportActionStats(Airport airport) {
+    final latLng = LatLng(airport.lat, airport.lon);
+    
+    // Scenario A: Direct To
+    // Route: [Current -> Airport]
+    final routeA = [RoutePoint(id: airport.ident, point: latLng, type: 'waypoint')];
+    final distA = _simulateRouteDistance(routeA);
+
+    // Scenario B: Add as Stopover (Rubber-band)
+    final index = _findBestInsertionIndex(latLng);
+    final routeB = List<RoutePoint>.from(_routePoints);
+    routeB.insert(index < routeB.length ? index : routeB.length, 
+      RoutePoint(id: airport.ident, point: latLng, type: 'waypoint')
+    );
+    final distB = _simulateRouteDistance(routeB);
+
+    // Scenario C: Set as Destination - Truncate
+    final indexC = _findBestInsertionIndex(latLng);
+    final routeC = List<RoutePoint>.from(_routePoints);
+    
+    if (indexC < routeC.length) {
+      routeC.removeRange(indexC, routeC.length); // Remove everything after insertion
+    }
+    routeC.add(RoutePoint(id: airport.ident, point: latLng, type: 'destination'));
+    final distC = _simulateRouteDistance(routeC);
+
+    return {
+      'direct': distA,
+      'stopover': distB,
+      'truncate': distC,
+    };
+  }
+
+  // 3. Truncate Logic
+  void _setDestinationTruncate(RoutePoint point) {
+    setState(() {
+      int index = _findBestInsertionIndex(point.point);
+      
+      // If index is valid, keep points 0 to index-1 (take(index))
+      if (index < _routePoints.length) {
+        _routePoints = _routePoints.take(index).toList();
+      }
+      
+      // Force type
+      final dest = RoutePoint(id: point.id, point: point.point, type: 'destination', name: point.name);
+      _routePoints.add(dest);
+    });
+  }
+
+  // ----------------------------------------------------------------------
+  
+  // NEW: Updated Execute Direct To Logic
+  void _executeDirectTo(RoutePoint target) {
+    List<RoutePoint> newRoute = [];
+    
+    // 1. Determine Start Point
+    if (_currentMode == AppMode.inFlight && _currentPosition != null) {
+      newRoute.add(RoutePoint(
+        id: "ACTUAL", 
+        point: LatLng(_currentPosition!.latitude, _currentPosition!.longitude), 
+        type: 'virtual',
+        name: "ACTUAL POS"
+      ));
+    } else {
+      if (_routePoints.isNotEmpty) {
+        newRoute.add(_routePoints.first); // Origin
+      }
+    }
+
+    // 2. Add Target
+    newRoute.add(target);
+
+    // 3. Append "Tail" (Points after the target)
+    // Find where this target fits (or exists) in the old list
+    int splitIndex = _routePoints.indexWhere((p) => p.id == target.id);
+    
+    // If it's a new point, simulate where it WOULD be (best insertion index)
+    // The "Tail" are points that would come AFTER this new point.
+    int tailStartIndex;
+    if (splitIndex == -1) {
+      tailStartIndex = _findBestInsertionIndex(target.point);
+    } else {
+      tailStartIndex = splitIndex + 1;
+    }
+
+    // Add everything remaining
+    if (tailStartIndex < _routePoints.length) {
+      newRoute.addAll(_routePoints.sublist(tailStartIndex));
+    }
+
+    setState(() {
+      _routePoints = newRoute;
+    });
+  }
+
+  Map<String, String> _simulateRouteStats(LatLng newPoint, bool isDirectTo) {
+    final Distance distCalc = const Distance();
+    double totalDistMeters = 0.0;
+    
+    if (isDirectTo) {
+        // 1. Start Point
+        LatLng startPos;
+        if (_currentMode == AppMode.inFlight && _currentPosition != null) {
+            startPos = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
+        } else if (_routePoints.isNotEmpty) {
+            startPos = _routePoints.first.point;
+        } else {
+            return {"total_dist": "0 NM", "leg_dist": "0 NM"};
+        }
+        
+        // 2. Leg to Target
+        double legDist = distCalc.as(LengthUnit.Meter, startPos, newPoint);
+        totalDistMeters += legDist;
+        
+        // 3. Tail
+        // Check if existing
+        int existingIndex = _routePoints.indexWhere((p) => p.point == newPoint || p.id == "TEMP"); // Loose check
+        
+        int tailIndex;
+        if (existingIndex != -1) {
+            tailIndex = existingIndex + 1;
+        } else {
+            tailIndex = _findBestInsertionIndex(newPoint);
+        }
+        
+        LatLng prev = newPoint;
+        for (int i = tailIndex; i < _routePoints.length; i++) {
+            totalDistMeters += distCalc.as(LengthUnit.Meter, prev, _routePoints[i].point);
+            prev = _routePoints[i].point;
+        }
+        
+        return {
+            "total_dist": "${(totalDistMeters / 1852.0).toStringAsFixed(1)} NM",
+            "leg_dist": "${(legDist / 1852.0).toStringAsFixed(1)} NM"
+        };
+
+    } else {
+      // Scenario B: Insert
+      // Route: [... -> p1 -> newPoint -> p2 -> ...]
+      List<LatLng> tempPoints = _routePoints.map((r) => r.point).toList();
+      int insertIndex = _findBestInsertionIndex(newPoint);
+      if (insertIndex > tempPoints.length) insertIndex = tempPoints.length;
+      tempPoints.insert(insertIndex, newPoint);
+      
+      // Calculate total
+      for (int i = 0; i < tempPoints.length - 1; i++) {
+        totalDistMeters += distCalc.as(LengthUnit.Meter, tempPoints[i], tempPoints[i+1]);
+      }
+      return {
+        "total_dist": "${(totalDistMeters / 1852.0).toStringAsFixed(1)} NM",
+        "leg_dist": "---" // Not purely leg based
+      };
+    }
+  }
+
+  void _executeRouteChange(RoutePoint newPoint, bool isDirectTo) {
+    if (isDirectTo) {
+      _executeDirectTo(newPoint);
+    } else {
+      setState(() {
+        // Insert
+        int index = _findBestInsertionIndex(newPoint.point);
+        _routePoints.insert(index, newPoint);
+      });
+    }
+  }
+
+  // --- NEW: Route Options Modal ---
+
+  void _showRouteOptions(BuildContext context, RoutePoint? routePoint, Airport? airport) {
+    // Extract data from whichever object is provided
+    final LatLng point = routePoint?.point ?? LatLng(airport!.lat, airport.lon);
+    final String id = routePoint?.id ?? airport!.ident;
+    final String? name = routePoint?.name ?? airport?.name;
+
+    // 1. Calculate Nav Data
+    final navData = _calculateNavData(point);
+    
+    // Check if point is already in route (Match by ID or Coordinates)
+    bool isInRoute = _routePoints.any((rp) => rp.id == id); // Simple ID check
+    
+    // Get Stats for Insert Mode (Default)
+    final insertStats = _simulateRouteStats(point, false);
+    // Get Stats for Direct Mode
+    final directStats = _simulateRouteStats(point, true);
+    
+    // If we have an airport, let's get the advanced comparison stats
+    Map<String, double>? advStats;
+    if (airport != null) {
+      advStats = _getAirportActionStats(airport);
+    }
+
+    // Direct To Label
+    String directLabel = _currentMode == AppMode.inFlight 
+        ? "Direct To (From Here)" 
+        : "Direct To (From Origin)";
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A1A2F).withOpacity(0.95),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(top: BorderSide(color: Colors.white.withOpacity(0.2))),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 1. Header
+              Text(
+                id,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              if (name != null)
+                Text(
+                  name,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              const SizedBox(height: 10),
+              
+              // 2. Stats Rows
+               Container(
+                margin: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black45,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Column(
+                  children: [
+                     ListTile(
+                       leading: const Icon(Icons.near_me, color: Colors.purpleAccent),
+                       title: Text(directLabel, style: const TextStyle(color: Colors.white)),
+                       subtitle: Text("Total: ${directStats['total_dist']} | Leg: ${directStats['leg_dist']} | ETE: ${navData['ete']}", style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                       dense: true,
+                     ),
+                     ListTile(
+                       leading: const Icon(Icons.route, color: Colors.blueAccent),
+                       title: const Text("Total Route (If Added)", style: TextStyle(color: Colors.white)),
+                       subtitle: Text("Total: ${insertStats['total_dist']}", style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                       dense: true,
+                     ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // 3. Logic Branching Buttons
+              
+              // Condition A: Always show Remove if in route (Imported or Manual)
+              if (isInRoute) 
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent.withOpacity(0.2),
+                      foregroundColor: Colors.redAccent,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      side: const BorderSide(color: Colors.redAccent),
+                    ),
+                    onPressed: () {
+                      _removePoint(id);
+                      Navigator.pop(ctx);
+                    },
+                    icon: const Icon(Icons.remove_circle_outline),
+                    label: const Text("Remove from Route"),
+                  ),
+                ),
+                
+              const SizedBox(height: 12),
+              
+              // Condition B: Direct To (Show in BOTH modes now)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purpleAccent.withOpacity(0.2),
+                    foregroundColor: Colors.purpleAccent,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    side: const BorderSide(color: Colors.purpleAccent),
+                  ),
+                  onPressed: () {
+                    final rp = RoutePoint(id: id, point: point, type: 'waypoint', name: name);
+                    _executeDirectTo(rp); 
+                    Navigator.pop(ctx);
+                  },
+                  icon: const Icon(Icons.near_me),
+                  label: Text(directLabel),
+                ),
+              ),
+                
+              const SizedBox(height: 12),
+
+              // Standard Options (Insert) - Always show if not in route
+              if (!isInRoute) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blueAccent.withOpacity(0.2),
+                      foregroundColor: Colors.blueAccent,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      side: const BorderSide(color: Colors.blueAccent),
+                    ),
+                    onPressed: () {
+                      final type = (airport != null) ? 'waypoint' : 'waypoint'; 
+                      final newRp = RoutePoint(id: id, point: point, type: type, name: name);
+                      
+                      _executeRouteChange(newRp, false); // Insert
+                      Navigator.pop(ctx);
+                    },
+                    icon: const Icon(Icons.add_location_alt),
+                    label: Text("Insert Waypoint (${advStats != null ? '${advStats['stopover']!.toStringAsFixed(0)} NM' : ''})"),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                
+                // Set Destination
+                // Show if NOT in route OR (InFlight mode AND custom point/new) to allow diverting
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.greenAccent.withOpacity(0.2),
+                      foregroundColor: Colors.greenAccent,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      side: const BorderSide(color: Colors.greenAccent),
+                    ),
+                    onPressed: () {
+                        final newRp = RoutePoint(id: id, point: point, type: 'destination', name: name);
+                        _setDestinationTruncate(newRp);
+                        Navigator.pop(ctx);
+                    },
+                    icon: const Icon(Icons.flag),
+                    label: Text("Set as Destination (${advStats != null ? '${advStats['truncate']!.toStringAsFixed(0)} NM' : ''})"),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // --- NEW: Explicit Airport Options Modal ---
+  void _showAirportQuickView(BuildContext context, Airport airport) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AirportStatusPopup(
+          airport: airport,
+          onRoute: () {
+            Navigator.pop(ctx);
+            // Redirect to the existing Route Options logic
+            _showRouteOptions(context, RoutePoint(id: airport.ident, point: LatLng(airport.lat, airport.lon), type: 'airport', name: airport.name), airport);
+          },
+          onAnalyze: () {
+            Navigator.pop(ctx);
+            _showDetailedAnalysis(context, airport);
+          },
+        );
+      },
+    );
+  }
+
+  void _showDetailedAnalysis(BuildContext context, Airport airport) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => AirportDetailSheet(
+        icao: airport.ident, 
+        aiModel: _model
+      ),
+    );
+  }
+  
+  Widget _buildStatItem(String label, String value, IconData icon) {
+    return Column(
+      children: [
+        Icon(icon, color: Colors.white38, size: 16),
+        const SizedBox(height: 4),
+        Text(value, style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 16)),
+        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 10)),
+      ],
+    );
+  }
+  
+  Widget _buildVerticalDivider() {
+    return Container(width: 1, height: 30, color: Colors.white12);
   }
 
   // --- NEW: Airport Layer Logic ---
@@ -168,10 +748,10 @@ class _DashBoardState extends State<DashBoard> {
 
   String _getCategoryColorHex(String category) {
     switch (category.toUpperCase()) {
-      case 'VFR': return '#00FF00'; // Green
-      case 'MVFR': return '#0000FF'; // Blue
-      case 'IFR': return '#FF0000'; // Red
-      case 'LIFR': return '#800080'; // Purple
+      case 'VFR': return '#10B981'; // Emerald Green
+      case 'MVFR': return '#3B82F6'; // Royal Blue
+      case 'IFR': return '#EF4444'; // Soft Red
+      case 'LIFR': return '#D946EF'; // Magenta
       default: return '#808080'; // Gray
     }
   }
@@ -197,16 +777,8 @@ class _DashBoardState extends State<DashBoard> {
       height: 80,
       child: GestureDetector(
         onTap: () {
-          // Show details
-          showModalBottomSheet(
-            context: context,
-            backgroundColor: Colors.transparent,
-            isScrollControlled: true,
-            builder: (ctx) => AirportDetailSheet(
-              icao: airport.ident,
-              aiModel: _model,
-            ),
-          );
+          // --- NEW: Use Airport Quick View ---
+          _showAirportQuickView(context, airport);
         },
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -442,11 +1014,14 @@ class _DashBoardState extends State<DashBoard> {
             setState(() {
               _currentMode = AppMode.preflight;
             });
+            // NOTIFY NAVIGATION BAR (Show it)
+            widget.onEmergencyStateChanged?.call(false);
           },
           routePoints: _routePoints,
           weatherPolygons: _displayedPolygons,
           mapController: _mapController,
           onEmergencyStateChanged: widget.onEmergencyStateChanged,
+          initialPosition: _currentPosition, // Pass current position
         );
       case AppMode.preflight:
       default:
@@ -512,6 +1087,15 @@ class _DashBoardState extends State<DashBoard> {
                   hazardMarkers: hazardMarkers,
                   airportMarkers: _airportMarkers, // Pass markers here
                   onMapTap: _handleMapTap,
+                  // --- NEW: Handle Long Press for Route Options ---
+                  onMapLongPress: (tapPos, point) {
+                     String newId = "USR-${DateTime.now().second}"; 
+                    _showRouteOptions(context, RoutePoint(id: newId, point: point, type: 'waypoint', name: newId), null);
+                  },
+                  // --- NEW: Handle Route Point Tap (Imported or Manual) ---
+                  onRoutePointTap: (routePoint) {
+                    _showRouteOptions(context, routePoint, null);
+                  },
                   aiModel: _model, // Pass AI model here
                 )),
 
@@ -573,6 +1157,8 @@ class _DashBoardState extends State<DashBoard> {
                   setState(() {
                     _currentMode = AppMode.inFlight;
                   });
+                  // NOTIFY NAVIGATION BAR (Hide it)
+                  widget.onEmergencyStateChanged?.call(true);
                 },
               ),
             ),

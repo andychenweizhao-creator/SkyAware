@@ -35,6 +35,21 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
 
   @override
   Widget build(BuildContext context) {
+    // Determine Theme Mode
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    // Define Colors based on Mode
+    final backgroundColor = isDarkMode ? const Color(0xFF1E1E1E) : Colors.white;
+    final textColor = isDarkMode ? Colors.white : Colors.black87;
+    final subTextColor = isDarkMode ? Colors.white54 : Colors.black54;
+    final iconColor = isDarkMode ? Colors.cyanAccent : Colors.black87;
+    final borderColor = isDarkMode ? Colors.white.withOpacity(0.1) : Colors.black12;
+    final shadowColor = isDarkMode ? Colors.black.withOpacity(0.5) : Colors.black12;
+    final dividerColor = isDarkMode ? Colors.white24 : Colors.black12;
+    final inputFillColor = isDarkMode ? Colors.black38 : const Color(0xFFF5F5F7);
+    final inputBorderColor = isDarkMode ? Colors.white12 : Colors.black12;
+    final hintColor = isDarkMode ? Colors.white30 : Colors.black38;
+
     // Access unit settings
     final units = Provider.of<UnitSettingsProvider>(context);
     final isFeet = units.altitudeUnit == AltitudeUnit.feet;
@@ -50,12 +65,12 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
         child: Container(
           width: _isExpanded ? 240 : 56,
           decoration: BoxDecoration(
-            color: const Color(0xFF0A1A2F).withOpacity(0.95),
+            color: backgroundColor,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            border: Border.all(color: borderColor),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.5),
+                color: shadowColor,
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -75,17 +90,17 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       if (_isExpanded)
-                        const Text(
+                        Text(
                           "Flight Layers",
                           style: TextStyle(
-                            color: Colors.white,
+                            color: textColor,
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                           ),
                         ),
                       Icon(
                         _isExpanded ? Icons.layers_clear : Icons.layers,
-                        color: Colors.cyanAccent,
+                        color: iconColor,
                       ),
                     ],
                   ),
@@ -93,7 +108,7 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
               ),
 
               if (_isExpanded) ...[
-                const Divider(height: 1, color: Colors.white24),
+                Divider(height: 1, color: dividerColor),
                 
                 // Altitude Input
                 Padding(
@@ -101,21 +116,21 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text("CRUISE ALTITUDE", style: TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold)),
+                      Text("CRUISE ALTITUDE", style: TextStyle(color: subTextColor, fontSize: 10, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       Container(
                         decoration: BoxDecoration(
-                          color: Colors.black38,
+                          color: inputFillColor,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.white12),
+                          border: Border.all(color: inputBorderColor),
                         ),
                         child: TextField(
                           controller: widget.altitudeController,
                           keyboardType: TextInputType.number,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
                           decoration: InputDecoration(
                             hintText: "Enter Alt ($unitLabel)",
-                            hintStyle: const TextStyle(color: Colors.white30),
+                            hintStyle: TextStyle(color: hintColor),
                             border: InputBorder.none,
                             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                             suffix: Padding(
@@ -124,16 +139,13 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
                                 widget.altitude != null 
                                   ? (isFeet 
                                       ? "ft" 
-                                      : "m") // Display unit based on value, actually this is static hint
+                                      : "m")
                                   : unitLabel, 
                                 style: const TextStyle(color: Colors.greenAccent, fontSize: 12)
                               ),
                             ),
                           ),
                           onChanged: (val) {
-                            // If user is in meters mode, we need to convert to feet before passing back?
-                            // The Dashboard expects feet in _cruiseAltitudeFeet (implied by name).
-                            // Let's assume input is in current units, convert to feet for logic.
                             if (val.isEmpty) {
                               widget.onAltitudeChanged("");
                               return;
@@ -156,7 +168,7 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
                   ),
                 ),
 
-                const Divider(height: 1, color: Colors.white24),
+                Divider(height: 1, color: dividerColor),
 
                 // Layer Toggles
                 Padding(
@@ -165,23 +177,23 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _buildToggle("Airports", Colors.white), // Added Airports Toggle
-                      _buildToggle("CONV", Colors.red),
-                      _buildToggle("TURB", Colors.orange),
-                      _buildToggle("ICE", Colors.blue),
-                      _buildToggle("IFR", Colors.purple),
-                      _buildToggle("MTN OBS", Colors.brown),
-                      _buildToggle("LLWS", Colors.amber),
-                      _buildToggle("Terrain", Colors.green),
+                      _buildToggle("Airports", isDarkMode ? Colors.white : Colors.black, isDarkMode),
+                      _buildToggle("CONV", Colors.red, isDarkMode),
+                      _buildToggle("TURB", Colors.orange, isDarkMode),
+                      _buildToggle("ICE", Colors.blue, isDarkMode),
+                      _buildToggle("IFR", Colors.purple, isDarkMode),
+                      _buildToggle("MTN OBS", Colors.brown, isDarkMode),
+                      _buildToggle("LLWS", Colors.amber, isDarkMode),
+                      _buildToggle("Terrain", Colors.green, isDarkMode),
                     ],
                   ),
                 ),
 
-                const Divider(height: 1, color: Colors.white24),
+                Divider(height: 1, color: dividerColor),
 
                 // Full Data Toggle
                 SwitchListTile(
-                  title: const Text("Show All Altitudes", style: TextStyle(color: Colors.white, fontSize: 12)),
+                  title: Text("Show All Altitudes", style: TextStyle(color: textColor, fontSize: 12)),
                   value: widget.showFullData,
                   activeColor: Colors.cyanAccent,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12),
@@ -189,7 +201,7 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
                   onChanged: widget.onToggleFullData,
                 ),
 
-                const Divider(height: 1, color: Colors.white24),
+                Divider(height: 1, color: dividerColor),
 
                 // Reset Button
                 InkWell(
@@ -217,8 +229,14 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
     );
   }
 
-  Widget _buildToggle(String label, Color color) {
+  Widget _buildToggle(String label, Color color, bool isDarkMode) {
     final bool isActive = widget.isLayerActive(label);
+    
+    // In Light mode, we want the inactive text to be visible (black54)
+    // In Dark mode, white54.
+    final inactiveTextColor = isDarkMode ? Colors.white54 : Colors.black54;
+    final inactiveBorderColor = isDarkMode ? Colors.white24 : Colors.black12;
+
     return GestureDetector(
       onTap: () => widget.onToggleLayer(label),
       child: AnimatedContainer(
@@ -227,7 +245,7 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
         decoration: BoxDecoration(
           color: isActive ? color.withOpacity(0.2) : Colors.transparent,
           border: Border.all(
-            color: isActive ? color : Colors.white24,
+            color: isActive ? color : inactiveBorderColor,
             width: 1.5,
           ),
           borderRadius: BorderRadius.circular(20),
@@ -235,7 +253,7 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
         child: Text(
           label,
           style: TextStyle(
-            color: isActive ? color : Colors.white54,
+            color: isActive ? color : inactiveTextColor,
             fontWeight: FontWeight.bold,
             fontSize: 11,
           ),

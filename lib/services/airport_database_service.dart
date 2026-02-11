@@ -6,6 +6,7 @@ import 'package:flutter_map/flutter_map.dart'; // For LatLngBounds
 
 class Airport {
   final String ident;
+  final String iata;
   final String name;
   final double lat;
   final double lon;
@@ -16,6 +17,7 @@ class Airport {
 
   Airport({
     required this.ident,
+    this.iata = 'N/A',
     required this.name,
     required this.lat,
     required this.lon,
@@ -42,106 +44,151 @@ class AirportDatabaseService {
     if (_isLoaded) return;
 
     try {
-      final String csvData = await rootBundle.loadString('assets/airports.csv');
-      // Split by line handles \r\n, \n, \r
-      final List<String> lines = const LineSplitter().convert(csvData);
+      final String data = await rootBundle.loadString('assets/GlobalAirportDatabase.txt');
+      final List<String> lines = const LineSplitter().convert(data);
 
-      // Skip header if present (standard usually has 'id,ident,...')
-      int startIndex = 0;
-      if (lines.isNotEmpty && lines[0].contains('ident')) {
-        startIndex = 1;
-      }
-
-      for (int i = startIndex; i < lines.length; i++) {
-        final row = _parseCsvLine(lines[i]);
+      for (String line in lines) {
+        if (line.trim().isEmpty) continue;
         
-        // Ensure we have enough columns. 
-        // We need up to index 6 (elevation).
-        if (row.length > 6) {
-          // Mapping based on user request:
-          // ident: col 1
-          // type: col 2
-          // name: col 3
-          // lat: col 4
-          // lon: col 5
-          // elevation: col 6
-          // gps_code: col 12 (index 12) if available
+        final parts = line.split(':');
+
+        if (parts.length >= 14) {
+          // 1. Parse Name
+          String name = parts[2].trim();
+          String nameUpper = name.toUpperCase();
+
+          // 2. Blacklist Filter
+          if (nameUpper.contains("HELIPORT") || nameUpper.contains("HELIPAD") || nameUpper.contains("HELI ")) continue;
+          if (nameUpper.contains("SEAPLANE") || nameUpper.contains(" SPB ") || nameUpper.contains("FLOATPLANE")) continue;
+          if (nameUpper.contains("STATION") || nameUpper.contains("TRAIN")) continue;
+          if (nameUpper.contains("GLIDER") || nameUpper.contains("ULTRALIGHT")) continue;
+
+          int latDeg = int.tryParse(parts[5]) ?? 0;
+          int latMin = int.tryParse(parts[6]) ?? 0;
+          int latSec = int.tryParse(parts[7]) ?? 0;
+          String latDir = parts[8].toUpperCase();
+
+          int lonDeg = int.tryParse(parts[9]) ?? 0;
+          int lonMin = int.tryParse(parts[10]) ?? 0;
+          int lonSec = int.tryParse(parts[11]) ?? 0;
+          String lonDir = parts[12].toUpperCase();
+
+          double lat = _dmsToDecimal(latDeg, latMin, latSec, latDir);
+          double lon = _dmsToDecimal(lonDeg, lonMin, lonSec, lonDir);
+
+          // 3. Coordinate Calculation & Filter
+          if (lat == 0.0 && lon == 0.0) continue; // Invalid data
+
+          // North American Filter
+          if (lat < 15.0) continue; // Region filter (Mexico/South America)
+          if (lon > -50.0) continue;     
+          if (lon < -180.0) continue;    
+          if (lonDir != 'W' && lon != 0.0 && lon != 180.0) continue;
+          if (lon > 0) continue;
+
+          String ident = parts[0];
+          String iata = parts[1];
           
-          String rawIdent = row[1];
-          final type = row[2];
-          final name = row[3];
-          final latString = row[4];
-          final lonString = row[5];
-          final elevString = row[6];
-          
-          // Logic: Prioritize gps_code (col 12) > ident (col 1)
-          if (row.length > 12 && row[12].trim().isNotEmpty) {
-             rawIdent = row[12];
+          if (ident == 'N/A' && iata != 'N/A') {
+             ident = iata;
           }
+          if (ident == 'N/A' || ident.isEmpty) continue;
 
-          final ident = rawIdent.trim().toUpperCase();
+          int elevation = int.tryParse(parts[13]) ?? 0;
 
-          // Filter: If the resulting code is not 3 or 4 alphanumeric characters, skip it.
-          // This filters out heliports without proper codes or private strips with weird IDs.
-          if (ident.length < 3 || ident.length > 4) {
-             continue;
-          }
-
-          // Basic filtering for valid types
-          if (type == 'small_airport' || type == 'medium_airport' || type == 'large_airport') {
-            final lat = double.tryParse(latString) ?? 0.0;
-            final lon = double.tryParse(lonString) ?? 0.0;
-            final elev = int.tryParse(elevString) ?? 0;
-
-            _allAirports.add(Airport(
-              ident: ident,
-              name: name,
-              lat: lat,
-              lon: lon,
-              elevation: elev,
-              type: type,
-            ));
-          }
+          _allAirports.add(Airport(
+            ident: ident,
+            iata: iata,
+            name: name,
+            lat: lat,
+            lon: lon,
+            elevation: elevation,
+            type: "airport", 
+          ));
         }
       }
       _isLoaded = true;
-      print("AirportDatabaseService: Loaded ${_allAirports.length} airports.");
+      print("AirportDatabaseService: Loaded ${_allAirports.length} airports (North America).");
     } catch (e) {
       print("AirportDatabaseService Error: $e");
     }
   }
 
-  /// Manually parses a CSV line handling quotes and commas inside quotes.
-  List<String> _parseCsvLine(String line) {
-    final List<String> result = [];
-    StringBuffer currentField = StringBuffer();
-    bool inQuotes = false;
-
-    for (int i = 0; i < line.length; i++) {
-      final char = line[i];
-
-      if (char == '"') {
-        inQuotes = !inQuotes;
-      } else if (char == ',' && !inQuotes) {
-        // End of field
-        result.add(currentField.toString());
-        currentField.clear();
-      } else {
-        currentField.write(char);
-      }
+  double _dmsToDecimal(int degrees, int minutes, int seconds, String direction) {
+    double decimal = degrees + (minutes / 60.0) + (seconds / 3600.0);
+    if (direction == 'S' || direction == 'W') {
+      decimal = -decimal;
     }
-    // Add the last field
-    result.add(currentField.toString());
-
-    return result;
+    return decimal;
   }
 
   List<Airport> getAirportsInBounds(LatLngBounds bounds) {
     if (!_isLoaded) return [];
-
-    // Filter airports within the visible bounds
     return _allAirports.where((airport) {
       return bounds.contains(LatLng(airport.lat, airport.lon));
     }).toList();
+  }
+
+  /// Finds the nearest [limit] airports to the given coordinates.
+  /// Uses Haversine distance.
+  List<Airport> getNearestAirports(double lat, double lon, int limit) {
+    if (!_isLoaded) return [];
+
+    final Distance distance = const Distance();
+    final LatLng currentPos = LatLng(lat, lon);
+
+    // Filter roughly first to avoid expensive calcs on all airports
+    // 5 degrees latitude is roughly 300nm.
+    final List<MapEntry<Airport, double>> candidates = [];
+    
+    // First pass: Only airports with IATA codes (likely major/paved)
+    for (final airport in _allAirports) {
+      // STRICT EXCLUSION LIST (Double Check in Search)
+      String nameUpper = airport.name.toUpperCase();
+      if (nameUpper.contains("HELIPORT") || nameUpper.contains("HELIPAD") || nameUpper.contains("HELI ")) continue;
+      if (nameUpper.contains("SEAPLANE") || nameUpper.contains(" SPB ") || nameUpper.contains("FLOAT")) continue;
+      if (nameUpper.contains("STATION") || nameUpper.contains("TRAIN")) continue;
+      if (nameUpper.contains("OFFLINE") || nameUpper.contains("CLOSED")) continue;
+      
+      // COORDINATE CHECK:
+      if (airport.lat == 0.0 && airport.lon == 0.0) continue;
+
+      if (airport.iata == 'N/A') continue; // Optimization: Skip non-IATA first
+      
+      if ((airport.lat - lat).abs() < 5.0 && (airport.lon - lon).abs() < 5.0) {
+        // Calculate meters and convert to Nautical Miles (1 NM = 1852m)
+        final double distMeters = distance.as(LengthUnit.Meter, currentPos, LatLng(airport.lat, airport.lon));
+        final double distNm = distMeters / 1852.0;
+        candidates.add(MapEntry(airport, distNm));
+      }
+    }
+
+    // If we don't have enough candidates, widen search to include non-IATA
+    if (candidates.length < limit) {
+       for (final airport in _allAirports) {
+          if (airport.iata != 'N/A') continue; // Already checked
+          
+          // STRICT EXCLUSION LIST (Double Check in Search)
+          String nameUpper = airport.name.toUpperCase();
+          if (nameUpper.contains("HELIPORT") || nameUpper.contains("HELIPAD") || nameUpper.contains("HELI ")) continue;
+          if (nameUpper.contains("SEAPLANE") || nameUpper.contains(" SPB ") || nameUpper.contains("FLOAT")) continue;
+          if (nameUpper.contains("STATION") || nameUpper.contains("TRAIN")) continue;
+          if (nameUpper.contains("OFFLINE") || nameUpper.contains("CLOSED")) continue;
+          
+          if (airport.lat == 0.0 && airport.lon == 0.0) continue;
+          
+          if ((airport.lat - lat).abs() < 5.0 && (airport.lon - lon).abs() < 5.0) {
+            final double distMeters = distance.as(LengthUnit.Meter, currentPos, LatLng(airport.lat, airport.lon));
+            final double distNm = distMeters / 1852.0;
+            candidates.add(MapEntry(airport, distNm));
+          }
+       }
+    }
+
+    // Sort by distance
+    candidates.sort((a, b) => a.value.compareTo(b.value));
+
+    // Return top N
+    return candidates.take(limit).map((e) => e.key).toList();
   }
 }
