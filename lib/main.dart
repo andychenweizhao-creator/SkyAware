@@ -57,6 +57,9 @@ class MyApp extends StatelessWidget {
             TargetPlatform.iOS: CinematicPageTransitionsBuilder(),
           },
         ),
+        extensions: <ThemeExtension<dynamic>>[
+          AviationColors.lightAviationColors,
+        ],
       ),
       darkTheme: ThemeData(
         brightness: Brightness.dark,
@@ -78,6 +81,9 @@ class MyApp extends StatelessWidget {
             TargetPlatform.iOS: CinematicPageTransitionsBuilder(),
           },
         ),
+        extensions: <ThemeExtension<dynamic>>[
+          AviationColors.darkAviationColors,
+        ],
       ),
       themeMode: themeController.themeMode,
       debugShowCheckedModeBanner: false,
@@ -130,4 +136,91 @@ class CinematicPageTransitionsBuilder extends PageTransitionsBuilder {
       child: child,
     );
   }
+}
+
+@immutable
+class AviationColors extends ThemeExtension<AviationColors> {
+  const AviationColors({
+    required this.vfr,
+    required this.mvfr,
+    required this.ifr,
+    required this.lifr,
+    required this.mapButtonBg,
+    required this.mapButtonIcon,
+    required this.distanceMenuBg,
+    required this.distanceMenuText,
+  });
+
+  final Color? vfr;
+  final Color? mvfr;
+  final Color? ifr;
+  final Color? lifr;
+  final Color? mapButtonBg;
+  final Color? mapButtonIcon;
+  final Color? distanceMenuBg;
+  final Color? distanceMenuText;
+
+  @override
+  AviationColors copyWith({
+    Color? vfr,
+    Color? mvfr,
+    Color? ifr,
+    Color? lifr,
+    Color? mapButtonBg,
+    Color? mapButtonIcon,
+    Color? distanceMenuBg,
+    Color? distanceMenuText,
+  }) {
+    return AviationColors(
+      vfr: vfr ?? this.vfr,
+      mvfr: mvfr ?? this.mvfr,
+      ifr: ifr ?? this.ifr,
+      lifr: lifr ?? this.lifr,
+      mapButtonBg: mapButtonBg ?? this.mapButtonBg,
+      mapButtonIcon: mapButtonIcon ?? this.mapButtonIcon,
+      distanceMenuBg: distanceMenuBg ?? this.distanceMenuBg,
+      distanceMenuText: distanceMenuText ?? this.distanceMenuText,
+    );
+  }
+
+  @override
+  AviationColors lerp(AviationColors? other, double t) {
+    if (other is! AviationColors) {
+      return this;
+    }
+    return AviationColors(
+      vfr: Color.lerp(vfr, other.vfr, t),
+      mvfr: Color.lerp(mvfr, other.mvfr, t),
+      ifr: Color.lerp(ifr, other.ifr, t),
+      lifr: Color.lerp(lifr, other.lifr, t),
+      mapButtonBg: Color.lerp(mapButtonBg, other.mapButtonBg, t),
+      mapButtonIcon: Color.lerp(mapButtonIcon, other.mapButtonIcon, t),
+      distanceMenuBg: Color.lerp(distanceMenuBg, other.distanceMenuBg, t),
+      distanceMenuText: Color.lerp(distanceMenuText, other.distanceMenuText, t),
+    );
+  }
+
+  // Light Mode Logic
+  static const lightAviationColors = AviationColors(
+    vfr: Color(0xFF2E7D32), // Darker Green (Colors.green[800])
+    mvfr: Color(0xFF1565C0), // Blue (Colors.blue[800])
+    ifr: Color(0xFFC62828), // Red (Colors.red[800])
+    lifr: Color(0xFFAD1457), // Magenta (Colors.pink[800])
+    mapButtonBg: Colors.white,
+    mapButtonIcon: Color(0xFF0D47A1), // Deep Blue (Colors.blue[900])
+    distanceMenuBg: Color(0xFFEEEEEE),
+    distanceMenuText: Colors.black,
+  );
+
+  // Dark Mode Logic
+  static const darkAviationColors = AviationColors(
+    vfr: Color(0xFF00E676), // Bright/Neon Green (Colors.greenAccent[400])
+    mvfr: Color(0xFF2979FF), // Bright Blue (Colors.blueAccent[400])
+    ifr: Color(0xFFFF1744), // Bright Red (Colors.redAccent[400])
+    lifr: Color(0xFFF50057), // Bright Magenta (Colors.pinkAccent[400])
+    mapButtonBg: Color(0xFF333333),
+    mapButtonIcon: Colors.cyanAccent,
+    distanceMenuBg: Color(0xFF424242),
+    distanceMenuText: Colors.white,
+  );
 }

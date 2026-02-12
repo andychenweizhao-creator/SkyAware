@@ -30,11 +30,11 @@ class WindsAloftService {
         final List<dynamic> rawStations = json.decode(jsonString);
         // Cast to List<Map<String, dynamic>> for the calculator
         final List<Map<String, dynamic>> stations = rawStations.cast<Map<String, dynamic>>();
-        
+
         // Use the new algorithm
         final nearest = AviationWeatherCalculator.findNearestStation(
-          userLat: userLat, 
-          userLon: userLon, 
+          userLat: userLat,
+          userLon: userLon,
           stations: stations
         );
 
@@ -56,14 +56,14 @@ class WindsAloftService {
   Future<String?> fetchRawDataForStation(String stationId) async {
     try {
       final response = await http.get(Uri.parse(_windsUrl));
-      
+
       if (response.statusCode == 200) {
         final lines = response.body.split('\n');
-        
+
         // Remove 'K' from station ID for US stations as raw text usually uses 3 letters (e.g. LAX)
         // unless it's a 4 letter ID that isn't K-prefixed (uncommon in this dataset for US).
-        String searchId = stationId.startsWith('K') && stationId.length == 4 
-            ? stationId.substring(1) 
+        String searchId = stationId.startsWith('K') && stationId.length == 4
+            ? stationId.substring(1)
             : stationId;
 
         for (String line in lines) {
@@ -81,10 +81,10 @@ class WindsAloftService {
   /// Step 3: Interpolate Weather at User's Altitude
   Map<String, dynamic> getWeatherAtAltitude(double userAltitudeFt, String rawDataLine) {
     final parts = rawDataLine.trim().split(RegExp(r'\s+'));
-    
+
     // Parse available data
     Map<int, Map<String, double>> parsedData = {};
-    
+
     int dataIndex = 1;
     for (int i = 0; i < _levels.length; i++) {
        if (dataIndex < parts.length) {
@@ -96,7 +96,7 @@ class WindsAloftService {
     // Find Bounds
     int lowerAlt = _levels.first;
     int upperAlt = _levels.last;
-    
+
     if (userAltitudeFt <= _levels.first) {
       return _formatResult(parsedData[_levels.first]);
     }
@@ -116,7 +116,7 @@ class WindsAloftService {
     final upperData = parsedData[upperAlt];
 
     if (lowerData == null || upperData == null) {
-      return lowerData != null ? _formatResult(lowerData) : 
+      return lowerData != null ? _formatResult(lowerData) :
              (upperData != null ? _formatResult(upperData) : {'error': 'Data missing'});
     }
 
@@ -125,15 +125,15 @@ class WindsAloftService {
 
     double interpSpeed = _lerp(lowerData['speed']!, upperData['speed']!, fraction);
     double interpTemp = _lerp(lowerData['temp']!, upperData['temp']!, fraction);
-    
+
     // Wind Direction Interpolation (handle 360 wraparound)
     double lowerDir = lowerData['dir']!;
     double upperDir = upperData['dir']!;
-    
+
     double diff = upperDir - lowerDir;
     if (diff > 180) diff -= 360;
     if (diff < -180) diff += 360;
-    
+
     double interpDir = lowerDir + (diff * fraction);
     if (interpDir < 0) interpDir += 360;
     if (interpDir >= 360) interpDir -= 360;
@@ -164,7 +164,7 @@ class WindsAloftService {
 
     // Extract DDSS
     String ddss = token.substring(0, 4);
-    
+
     // Extract Temp (remaining chars)
     String tempStr = token.length > 4 ? token.substring(4) : "";
 
@@ -181,27 +181,27 @@ class WindsAloftService {
       dir -= 500;
       speed += 100;
     }
-    
+
     double temp = _parseTemp(tempStr, altitude);
     return {'dir': dir, 'speed': speed, 'temp': temp};
   }
 
   double _parseTemp(String tempStr, int altitude) {
     if (tempStr.isEmpty) return 0.0;
-    
+
     // If explicit sign exists, trust it.
     if (tempStr.contains('+') || tempStr.contains('-')) {
       return double.tryParse(tempStr) ?? 0.0;
     }
-    
+
     // Sign omitted
     double val = double.tryParse(tempStr) ?? 0.0;
-    
+
     // Per prompt: Temps > 24000ft are negative (minus sign omitted)
     if (altitude > 24000) {
       return -val.abs();
     }
-    
+
     return val;
   }
 }

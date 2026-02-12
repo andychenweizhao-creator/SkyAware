@@ -5,7 +5,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
-import 'package:latlong2/latlong.dart' hide Path; // HIDE Path to avoid conflict with dart:ui.Path
+import 'package:latlong2/latlong.dart' hide Path;
 import 'package:geolocator/geolocator.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:provider/provider.dart';
@@ -14,14 +14,14 @@ import 'Maps/maps.dart';
 import 'WeatherFeature.dart';
 import '../../services/terrain_service.dart';
 import 'CollapsibleLayerMenu.dart';
-import '../../services/airport_database_service.dart'; // Local DB
-import '../../services/ai_grading_service.dart'; // AI Grading
+import '../../services/airport_database_service.dart';
 import '../../UI/AppAnimations.dart';
 import '../../UI/AirportDetailSheet.dart';
-import '../../UI/AirportStatusPopup.dart'; // NEW: Reusable Popup
+import '../../UI/AirportStatusPopup.dart';
 import '../../services/ai_emergency_service.dart';
 import '../../UI/EmergencyOverlay.dart';
 import '../../services/weather_service.dart'; // Ensure WeatherService is imported
+import '../../main.dart'; // Import for AviationColors
 
 class HazardInfo {
   final LatLng point;
@@ -546,16 +546,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     );
   }
   
-  String _getCategoryColorHex(String category) {
-    switch (category.toUpperCase()) {
-      case 'VFR': return '#10B981'; 
-      case 'MVFR': return '#3B82F6';
-      case 'IFR': return '#EF4444';
-      case 'LIFR': return '#D946EF';
-      default: return '#808080';
-    }
-  }
-
   Future<void> _startEmergencyFlow() async {
     if (_model == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("AI Unavailable")));
@@ -783,7 +773,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
             _airportMarkers = limitedAirports.map((airport) {
               final category = categories[airport.ident];
               if (category != null) {
-                airport.riskColor = _getCategoryColorHex(category);
+                // Update riskReason only
                 airport.riskReason = category;
               }
               return _buildAirportMarker(airport);
@@ -797,12 +787,23 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   }
 
   Marker _buildAirportMarker(Airport airport) {
+    // Access Theme
+    final aviationColors = Theme.of(context).extension<AviationColors>()!;
+    
     Color markerColor = Colors.grey;
     if (airport.type == 'large_airport') markerColor = Colors.blue;
     else if (airport.type == 'medium_airport') markerColor = Colors.cyan;
     
-    if (airport.riskColor != null) {
-      markerColor = _parseHexColor(airport.riskColor!);
+    if (airport.riskReason != null) {
+      switch (airport.riskReason!.toUpperCase()) {
+        case 'VFR': markerColor = aviationColors.vfr ?? Colors.green; break;
+        case 'MVFR': markerColor = aviationColors.mvfr ?? Colors.blue; break;
+        case 'IFR': markerColor = aviationColors.ifr ?? Colors.red; break;
+        case 'LIFR': markerColor = aviationColors.lifr ?? Colors.purple; break;
+      }
+    } else if (airport.riskColor != null) {
+        // Fallback to parsed hex if available and riskReason is null (though riskReason should be set)
+        markerColor = _parseHexColor(airport.riskColor!);
     }
 
     return Marker(
@@ -1319,27 +1320,68 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   
   // NEW HELPERS FOR MODERN UI
   Widget _buildBackButton() {
+    final aviationColors = Theme.of(context).extension<AviationColors>()!;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    final List<BoxShadow> shadows = isDark
+        ? [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 10,
+              spreadRadius: 2,
+            )
+          ]
+        : [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.4),
+              blurRadius: 8,
+              spreadRadius: 1,
+              offset: const Offset(0, 2),
+            )
+          ];
+
     return GestureDetector(
       onTap: widget.onExit,
-      child: ClipOval(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.5),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withOpacity(0.2)),
+              color: (aviationColors.mapButtonBg ?? Colors.white).withOpacity(0.9),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.dividerColor.withOpacity(0.2)),
+              boxShadow: shadows,
             ),
-            child: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+            child: Icon(Icons.arrow_back_ios_new, color: aviationColors.mapButtonIcon, size: 20),
           ),
         ),
       ),
     );
   }
 
+  Widget _buildMaydayButton() {
+    return GestureDetector(
+      onTap: _startEmergencyFlow,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.redAccent,
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(color: Colors.white, width: 2),
+        ),
+        child: const Text("MAYDAY", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+      ),
+    );
+  }
+
   Widget _buildStatusPill() {
+    final aviationColors = Theme.of(context).extension<AviationColors>()!;
+    final theme = Theme.of(context);
+    
     if (_isEmergencyMode) {
       return AnimatedBuilder(
         animation: _flashController!,
@@ -1375,9 +1417,9 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.5),
+            color: (aviationColors.mapButtonBg ?? Colors.black).withOpacity(0.8),
             borderRadius: BorderRadius.circular(30),
-            border: Border.all(color: Colors.white.withOpacity(0.2)),
+            border: Border.all(color: theme.dividerColor.withOpacity(0.2)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1385,17 +1427,17 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
               Container(
                 width: 8,
                 height: 8,
-                decoration: const BoxDecoration(
-                  color: Colors.greenAccent,
+                decoration: BoxDecoration(
+                  color: aviationColors.mapButtonIcon ?? Colors.greenAccent,
                   shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: Colors.green, blurRadius: 4)],
+                  boxShadow: [BoxShadow(color: aviationColors.mapButtonIcon ?? Colors.green, blurRadius: 4)],
                 ),
               ),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 "In-Flight",
                 style: TextStyle(
-                  color: Colors.white,
+                  color: theme.colorScheme.onSurface,
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
@@ -1406,74 +1448,39 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
       ),
     );
   }
-
-  Widget _buildAltitudeHUD() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.5),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(0.2)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              const Text(
-                "ALTITUDE",
-                style: TextStyle(
-                  color: Colors.white54,
-                  fontSize: 10,
-                  letterSpacing: 1.0,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text(
-                    _currentAltitudeFeet != null
-                        ? _currentAltitudeFeet!.toStringAsFixed(0)
-                        : "---",
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Text(
-                    "ft",
-                    style: TextStyle(
-                      color: Colors.greenAccent,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
   
   Widget _buildZoomControls() {
+    final aviationColors = Theme.of(context).extension<AviationColors>()!;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    final List<BoxShadow> shadows = isDark
+        ? [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 10,
+              spreadRadius: 2,
+            )
+          ]
+        : [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.4),
+              blurRadius: 8,
+              spreadRadius: 1,
+              offset: const Offset(0, 2),
+            )
+          ];
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.6),
+            color: (aviationColors.mapButtonBg ?? Colors.black).withOpacity(0.9),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(0.2)),
+            border: Border.all(color: theme.dividerColor.withOpacity(0.2)),
+            boxShadow: shadows,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1486,7 +1493,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
               Container(
                 width: 40,
                 height: 1,
-                color: Colors.white.withOpacity(0.2),
+                color: theme.dividerColor.withOpacity(0.2),
               ),
               _buildZoomBtn(Icons.remove, () {
                 widget.mapController?.move(
@@ -1501,6 +1508,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   }
 
   Widget _buildZoomBtn(IconData icon, VoidCallback onTap) {
+    final aviationColors = Theme.of(context).extension<AviationColors>()!;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1509,46 +1517,66 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
           width: 48,
           height: 48,
           alignment: Alignment.center,
-          child: Icon(icon, color: Colors.white, size: 24),
+          child: Icon(icon, color: aviationColors.mapButtonIcon ?? Colors.white, size: 24),
         ),
       ),
     );
   }
 
   Widget _buildFollowButton() {
-    return ClipOval(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () {
-              setState(() {
-                _isFollowing = true;
-              });
-              if (_currentPosition != null) {
-                widget.mapController?.move(
-                  LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
-                  widget.mapController?.camera.zoom ?? 6.0
-                );
-              }
-            },
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.6),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: _isFollowing ? Colors.blueAccent : Colors.white.withOpacity(0.2),
-                  width: 2
-                ),
+    final aviationColors = Theme.of(context).extension<AviationColors>()!;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    final List<BoxShadow> shadows = isDark
+        ? [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 10,
+              spreadRadius: 2,
+            )
+          ]
+        : [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.4),
+              blurRadius: 8,
+              spreadRadius: 1,
+              offset: const Offset(0, 2),
+            )
+          ];
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _isFollowing = true;
+        });
+        if (_currentPosition != null) {
+          widget.mapController?.move(
+            LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+            widget.mapController?.camera.zoom ?? 6.0
+          );
+        }
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: (aviationColors.mapButtonBg ?? Colors.black).withOpacity(0.9),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: _isFollowing ? (aviationColors.mapButtonIcon ?? Colors.blueAccent) : theme.dividerColor.withOpacity(0.2),
+                width: 1.5
               ),
-              child: Icon(
-                _isFollowing ? Icons.gps_fixed : Icons.gps_not_fixed,
-                color: _isFollowing ? Colors.blueAccent : Colors.white70,
-                size: 24,
-              ),
+              boxShadow: shadows,
+            ),
+            child: Icon(
+              _isFollowing ? Icons.gps_fixed : Icons.gps_not_fixed,
+              color: _isFollowing ? (aviationColors.mapButtonIcon ?? Colors.blueAccent) : theme.colorScheme.onSurface.withOpacity(0.6),
+              size: 24,
             ),
           ),
         ),
@@ -1621,7 +1649,9 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     final themeController = Provider.of<ThemeController>(context);
-    final isDark = themeController.isDarkMode;
+    final theme = Theme.of(context); // Get global theme
+    // Note: themeController.isDarkMode is still used for tileUrl logic or could use theme.brightness
+    final isDark = theme.brightness == Brightness.dark;
 
     final String tileUrl = isDark 
         ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
@@ -1643,7 +1673,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     }
 
     return Scaffold(
-      backgroundColor: isDark ? Colors.black : const Color(0xFFF0F2F5),
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: Stack(
         children: [
           FlutterMap(
@@ -1792,58 +1822,28 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
                 MarkerLayer(markers: _airportMarkers),
             ],
           ),
-          IgnorePointer(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  colors: [Colors.transparent, Colors.black.withOpacity(0.5)],
-                  radius: 1.0,
-                  center: Alignment.center,
-                  stops: const [0.6, 1.0],
-                ),
-              ),
-            ),
-          ),
           
-          if (!_isEmergencyMode)
-            Positioned(
-              top: 60, 
-              left: 16,
-              child: _buildBackButton(),
-            ),
-          
-          if (!_isEmergencyMode)
-            Positioned(
-              top: 60,
-              left: 70, // Offset from back button
-              child: GestureDetector(
-                onTap: _startEmergencyFlow,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.redAccent,
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(color: Colors.red.withOpacity(0.6), blurRadius: 10, spreadRadius: 2)
-                    ],
-                    border: Border.all(color: Colors.white, width: 2),
-                  ),
-                  child: const Text("MAYDAY", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
-                ),
-              ),
-            ),
-
           Positioned(
-            top: 60, 
-            left: 0, 
+            top: 0,
+            left: 0,
             right: 0,
-            child: Center(child: _buildStatusPill()),
-          ),
-
-          Positioned(
-            top: 60, 
-            right: 16,
-            child: _buildAltitudeHUD(),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (!_isEmergencyMode) ...[
+                      _buildBackButton(),
+                      const SizedBox(width: 12),
+                      _buildMaydayButton(),
+                    ],
+                    const Spacer(),
+                    _buildStatusPill(),
+                  ],
+                ),
+              ),
+            ),
           ),
 
           if (!_isEmergencyMode)
@@ -1877,7 +1877,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
           if (!_isEmergencyMode)
             Positioned(
               right: 16,
-              bottom: 100, // Adjusted to sit above Flight Panel
+              bottom: 180, // Moved up from 100 to avoid crowding the bottom panel
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -1984,13 +1984,17 @@ class _FlightInfoPanelState extends State<FlightInfoPanel> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final aviationColors = theme.extension<AviationColors>()!;
 
     // Define Colors based on Mode
-    final backgroundColor = isDarkMode ? const Color(0xFF1E1E1E).withOpacity(0.95) : Colors.white.withOpacity(0.95);
-    final borderColor = isDarkMode ? Colors.white.withOpacity(0.1) : Colors.black12;
-    final shadowColor = isDarkMode ? Colors.black.withOpacity(0.5) : Colors.black12;
-    final iconColor = isDarkMode ? Colors.white54 : Colors.black54;
+    final backgroundColor = (aviationColors.mapButtonBg ?? theme.colorScheme.surface).withOpacity(0.95);
+    final borderColor = theme.dividerColor.withOpacity(0.2);
+    final shadowColor = theme.shadowColor.withOpacity(0.2);
+    final iconColor = theme.colorScheme.onSurface.withOpacity(0.6);
+    // Button styling colors
+    final buttonBgColor = (aviationColors.mapButtonBg ?? Colors.black).withOpacity(0.9);
+    final buttonIconColor = aviationColors.mapButtonIcon ?? theme.colorScheme.primary;
 
     // Incorporate Safe Area for proper layout on modern phones
     final double bottomPadding = MediaQuery.of(context).padding.bottom;
@@ -1999,16 +2003,19 @@ class _FlightInfoPanelState extends State<FlightInfoPanel> with SingleTickerProv
     // Instead, we use Container + AnimatedSize + explicit Bottom Padding inside content.
 
     return Container(
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        border: Border(top: BorderSide(color: borderColor)),
-        boxShadow: [
-          BoxShadow(color: shadowColor, blurRadius: 10, offset: const Offset(0, -2))
-        ]
-      ),
+      decoration: _isDataPanelVisible
+        ? BoxDecoration(
+            color: backgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            border: Border(top: BorderSide(color: borderColor)),
+            boxShadow: [
+              BoxShadow(color: shadowColor, blurRadius: 10, offset: const Offset(0, -2))
+            ]
+          )
+        : null, // No decoration when collapsed (transparent)
       child: SafeArea(
         top: false, // Only care about bottom safe area (home indicator)
+        bottom: false, // We handle bottom padding manually to allow floating button
         child: AnimatedSize(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
@@ -2025,12 +2032,26 @@ class _FlightInfoPanelState extends State<FlightInfoPanel> with SingleTickerProv
                 },
                 behavior: HitTestBehavior.opaque, // Hit test on full width
                 child: Container(
-                  width: double.infinity,
-                  height: 40,
+                  width: 60, // Fixed width
+                  height: 32, // Smaller height for button look
+                  margin: EdgeInsets.only(
+                    top: 8, 
+                    bottom: _isDataPanelVisible ? 0 : bottomPadding + 16
+                  ),
+                  decoration: _isDataPanelVisible 
+                    ? null // Transparent/Minimal when expanded
+                    : BoxDecoration(
+                        color: buttonBgColor,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: borderColor),
+                        boxShadow: [
+                           BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))
+                        ],
+                      ),
                   alignment: Alignment.center,
                   child: Icon(
                     _isDataPanelVisible ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
-                    color: iconColor,
+                    color: _isDataPanelVisible ? iconColor : buttonIconColor,
                     size: 24,
                   ),
                 ),
@@ -2040,14 +2061,15 @@ class _FlightInfoPanelState extends State<FlightInfoPanel> with SingleTickerProv
               if (_isDataPanelVisible)
                 Padding(
                   // We removed the manual 'bottomPadding' addition here because SafeArea handles it.
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12), 
+                  // Re-added manual bottom padding since SafeArea(bottom: false)
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottomPadding), 
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Expanded(child: _buildStatBox("GS", "${widget.gsKts.toStringAsFixed(0)}", "KT", isDarkMode)),
-                      Expanded(child: _buildStatBox("TRK", "${widget.track.round()}°", "", isDarkMode)),
-                      Expanded(child: _buildStatBox("DTG", widget.dtgNm.toStringAsFixed(1), "NM", isDarkMode)),
-                      Expanded(child: _buildStatBox("ETE", _formatDuration(widget.eteMinutes), "", isDarkMode)),
+                      Expanded(child: _buildStatBox("GS", "${widget.gsKts.toStringAsFixed(0)}", "KT", theme, aviationColors)),
+                      Expanded(child: _buildStatBox("TRK", "${widget.track.round()}°", "", theme, aviationColors)),
+                      Expanded(child: _buildStatBox("DTG", widget.dtgNm.toStringAsFixed(1), "NM", theme, aviationColors)),
+                      Expanded(child: _buildStatBox("ETE", _formatDuration(widget.eteMinutes), "", theme, aviationColors)),
                     ],
                   ),
                 ),
@@ -2058,9 +2080,10 @@ class _FlightInfoPanelState extends State<FlightInfoPanel> with SingleTickerProv
     );
   }
 
-  Widget _buildStatBox(String label, String value, String unit, bool isDarkMode) {
-    final labelColor = isDarkMode ? Colors.grey[500] : Colors.black54;
-    final valueColor = isDarkMode ? Colors.cyanAccent : Colors.black87;
+  Widget _buildStatBox(String label, String value, String unit, ThemeData theme, AviationColors aviationColors) {
+    final labelColor = theme.colorScheme.onSurface.withOpacity(0.6);
+    // Use mapButtonIcon (typically bright blue/cyan in dark mode, deep blue in light) or primary color
+    final valueColor = aviationColors.mapButtonIcon ?? theme.colorScheme.primary;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center, // Center align to prevent overflow

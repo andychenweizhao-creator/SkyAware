@@ -19,13 +19,13 @@ import 'Maps/maps.dart';
 import 'WeatherFeature.dart';
 import '../../services/terrain_service.dart';
 import 'CollapsibleLayerMenu.dart';
-import '../../services/ai_airport_service.dart';
+
 import '../../UI/AppAnimations.dart';
 import '../../UI/AirportDetailSheet.dart';
 import '../../UI/AirportStatusPopup.dart'; 
-import '../../services/airport_database_service.dart'; 
-import '../../services/ai_grading_service.dart'; 
+import '../../services/airport_database_service.dart';
 import '../../services/weather_service.dart'; 
+import '../../main.dart';
 
 enum AppMode { preflight, inFlight }
 
@@ -470,6 +470,10 @@ class _DashBoardState extends State<DashBoard> {
     final String id = routePoint?.id ?? airport!.ident;
     final String? name = routePoint?.name ?? airport?.name;
 
+    // Access Theme
+    final theme = Theme.of(context);
+    final aviationColors = theme.extension<AviationColors>()!;
+
     // 1. Calculate Nav Data
     final navData = _calculateNavData(point);
     
@@ -499,9 +503,9 @@ class _DashBoardState extends State<DashBoard> {
         return Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: const Color(0xFF0A1A2F).withOpacity(0.95),
+            color: theme.colorScheme.surface.withOpacity(0.95), // Theme-aware background
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border(top: BorderSide(color: Colors.white.withOpacity(0.2))),
+            border: Border(top: BorderSide(color: theme.colorScheme.onSurface.withOpacity(0.2))),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -509,8 +513,8 @@ class _DashBoardState extends State<DashBoard> {
               // 1. Header
               Text(
                 id,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface,
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.5,
@@ -519,7 +523,7 @@ class _DashBoardState extends State<DashBoard> {
               if (name != null)
                 Text(
                   name,
-                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7), fontSize: 14),
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -530,22 +534,22 @@ class _DashBoardState extends State<DashBoard> {
                Container(
                 margin: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  color: Colors.black45,
+                  color: theme.brightness == Brightness.dark ? Colors.black45 : Colors.grey[200],
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white12),
+                  border: Border.all(color: theme.colorScheme.onSurface.withOpacity(0.1)),
                 ),
                 child: Column(
                   children: [
                      ListTile(
                        leading: const Icon(Icons.near_me, color: Colors.purpleAccent),
-                       title: Text(directLabel, style: const TextStyle(color: Colors.white)),
-                       subtitle: Text("Total: ${directStats['total_dist']} | Leg: ${directStats['leg_dist']} | ETE: ${navData['ete']}", style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                       title: Text(directLabel, style: TextStyle(color: theme.colorScheme.onSurface)),
+                       subtitle: Text("Total: ${directStats['total_dist']} | Leg: ${directStats['leg_dist']} | ETE: ${navData['ete']}", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7), fontSize: 12)),
                        dense: true,
                      ),
                      ListTile(
                        leading: const Icon(Icons.route, color: Colors.blueAccent),
-                       title: const Text("Total Route (If Added)", style: TextStyle(color: Colors.white)),
-                       subtitle: Text("Total: ${insertStats['total_dist']}", style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                       title: Text("Total Route (If Added)", style: TextStyle(color: theme.colorScheme.onSurface)),
+                       subtitle: Text("Total: ${insertStats['total_dist']}", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7), fontSize: 12)),
                        dense: true,
                      ),
                   ],
@@ -733,7 +737,7 @@ class _DashBoardState extends State<DashBoard> {
               // Apply category if exists
               final category = categories[airport.ident];
               if (category != null) {
-                airport.riskColor = _getCategoryColorHex(category);
+                // We no longer set riskColor directly, but set riskReason
                 airport.riskReason = category;
               }
               return _buildAirportMarker(airport);
@@ -746,17 +750,10 @@ class _DashBoardState extends State<DashBoard> {
     }
   }
 
-  String _getCategoryColorHex(String category) {
-    switch (category.toUpperCase()) {
-      case 'VFR': return '#10B981'; // Emerald Green
-      case 'MVFR': return '#3B82F6'; // Royal Blue
-      case 'IFR': return '#EF4444'; // Soft Red
-      case 'LIFR': return '#D946EF'; // Magenta
-      default: return '#808080'; // Gray
-    }
-  }
-
   Marker _buildAirportMarker(Airport airport) {
+    // Access Theme Extension
+    final aviationColors = Theme.of(context).extension<AviationColors>()!;
+    
     Color markerColor = Colors.grey; // Default
     
     // Default Color Logic based on Type
@@ -766,9 +763,22 @@ class _DashBoardState extends State<DashBoard> {
       markerColor = Colors.cyan;
     }
 
-    // AI/Category Override
-    if (airport.riskColor != null) {
-      markerColor = _parseHexColor(airport.riskColor!);
+    // AI/Category Override using Theme Extension
+    if (airport.riskReason != null) {
+      switch (airport.riskReason!.toUpperCase()) {
+        case 'VFR':
+          markerColor = aviationColors.vfr ?? Colors.green;
+          break;
+        case 'MVFR':
+          markerColor = aviationColors.mvfr ?? Colors.blue;
+          break;
+        case 'IFR':
+          markerColor = aviationColors.ifr ?? Colors.red;
+          break;
+        case 'LIFR':
+          markerColor = aviationColors.lifr ?? Colors.purple;
+          break;
+      }
     }
 
     return Marker(
@@ -808,16 +818,7 @@ class _DashBoardState extends State<DashBoard> {
     );
   }
 
-  Color _parseHexColor(String hexString) {
-    try {
-      final buffer = StringBuffer();
-      if (hexString.length == 6 || hexString.length == 7) buffer.write('ff');
-      buffer.write(hexString.replaceFirst('#', ''));
-      return Color(int.parse(buffer.toString(), radix: 16));
-    } catch (e) {
-      return Colors.grey;
-    }
-  }
+  // Removed _parseHexColor and _getCategoryColorHex as they are replaced by Theme Extension logic.
 
   // --- End Airport Layer Logic ---
 
@@ -1000,8 +1001,10 @@ class _DashBoardState extends State<DashBoard> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1A2F),
+      backgroundColor: theme.scaffoldBackgroundColor, // Use Theme Background
       body: _buildContent(),
     );
   }
@@ -1138,10 +1141,6 @@ class _DashBoardState extends State<DashBoard> {
                 );
               },
             ),
-            
-            // Left-Side Locate Button (New)
-
-
             // Left-Side Import Button
             Positioned(
               left: 16,
@@ -1701,6 +1700,27 @@ class _GlassImportButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final aviationColors = Theme.of(context).extension<AviationColors>()!;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    final List<BoxShadow> shadows = isDark
+        ? [
+      BoxShadow(
+        color: Colors.black.withOpacity(0.3),
+        blurRadius: 10,
+        spreadRadius: 2,
+      )
+    ]
+        : [
+      BoxShadow(
+        color: Colors.grey.withOpacity(0.4),
+        blurRadius: 8,
+        spreadRadius: 1,
+        offset: const Offset(0, 2), // Slight downward shadow
+      )
+    ];
+
     return GestureDetector(
       onTap: onPressed,
       child: ClipRRect(
@@ -1711,11 +1731,12 @@ class _GlassImportButton extends StatelessWidget {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.3),
+              color: (aviationColors.mapButtonBg ?? Colors.black).withOpacity(0.8),
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white.withOpacity(0.2)),
+              boxShadow: shadows,
             ),
-            child: const Icon(Icons.upload_file, color: Colors.white, size: 28),
+            child: Icon(Icons.upload_file, color: aviationColors.mapButtonIcon ?? Colors.white, size: 28),
           ),
         ),
       ),
@@ -1723,38 +1744,4 @@ class _GlassImportButton extends StatelessWidget {
   }
 }
 
-class _GlassLocateButton extends StatelessWidget {
-  final VoidCallback onPressed;
 
-  const _GlassLocateButton({required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(30),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: const Color.fromRGBO(30, 30, 30, 0.8), // rgba(30,30,30,0.8)
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withOpacity(0.2), width: 1), // Subtle 1px border
-              boxShadow: [
-                 BoxShadow(
-                   color: Colors.black.withOpacity(0.3),
-                   blurRadius: 10,
-                   spreadRadius: 2,
-                 )
-              ]
-            ),
-            child: const Icon(Icons.gps_fixed, color: Colors.greenAccent, size: 24), // Crosshair icon
-          ),
-        ),
-      ),
-    );
-  }
-}

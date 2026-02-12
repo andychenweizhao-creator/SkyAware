@@ -109,7 +109,7 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
 
               if (_isExpanded) ...[
                 Divider(height: 1, color: dividerColor),
-                
+
                 // Altitude Input
                 Padding(
                   padding: const EdgeInsets.all(12),
@@ -136,11 +136,11 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
                             suffix: Padding(
                               padding: const EdgeInsets.only(right: 8.0),
                               child: Text(
-                                widget.altitude != null 
-                                  ? (isFeet 
-                                      ? "ft" 
+                                widget.altitude != null
+                                  ? (isFeet
+                                      ? "ft"
                                       : "m")
-                                  : unitLabel, 
+                                  : unitLabel,
                                 style: const TextStyle(color: Colors.greenAccent, fontSize: 12)
                               ),
                             ),
@@ -150,7 +150,7 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
                               widget.onAltitudeChanged("");
                               return;
                             }
-                            
+
                             int? inputVal = int.tryParse(val);
                             if (inputVal != null) {
                               if (!isFeet) {
@@ -231,7 +231,7 @@ class _CollapsibleLayerMenuState extends State<CollapsibleLayerMenu> with Single
 
   Widget _buildToggle(String label, Color color, bool isDarkMode) {
     final bool isActive = widget.isLayerActive(label);
-    
+
     // In Light mode, we want the inactive text to be visible (black54)
     // In Dark mode, white54.
     final inactiveTextColor = isDarkMode ? Colors.white54 : Colors.black54;

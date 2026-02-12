@@ -1,6 +1,6 @@
 import 'dart:math';
 import 'package:sunrise_sunset_calc/sunrise_sunset_calc.dart';
-import 'AdvancedAviationPhysics.dart';
+
 
 class AviationWeatherCalculator {
   /// Finds the nearest station from a list of airports/stations.
@@ -86,7 +86,7 @@ class AviationMath {
       'sunset': _formatTime(result.sunset),
     };
   }
-  
+
   /// Returns raw SunriseSunsetResult objects.
   static SunriseSunsetResult calculateRawSunriseSunset({
     required double lat,
@@ -130,14 +130,14 @@ class AviationMath {
   static double milesToMeters(double mi) => mi / 0.000621371;
   static double metersToFeet(double m) => m * 3.28084;
   static double feetToMeters(double ft) => ft / 3.28084;
-  
+
   static double kmToMiles(double km) => km * 0.621371;
-  
+
   static double kmhToMph(double kmh) => kmh * 0.621371;
   static double kmhToKnots(double kmh) => kmh * 0.539957;
-  
+
   static double mphToKnots(double mph) => mph * 0.868976;
   static double knotsToMph(double kts) => kts * 1.15078;
-  
+
   static double mmToInches(double mm) => mm * 0.0393701;
 }

@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../UI/AppAnimations.dart';
 import '../../services/unit_settings_service.dart';
 import '../../services/weather_service.dart'; // Added WeatherService
+import '../../main.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -506,6 +507,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final aviationColors = Theme.of(context).extension<AviationColors>()!;
     
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -1097,15 +1099,16 @@ class _HomePageState extends State<HomePage> {
   Widget _buildMetricsGrid(ThemeData theme, bool isDark) {
     if (_metarData == null) return const SizedBox.shrink();
     final units = Provider.of<UnitSettingsProvider>(context);
+    final aviationColors = Theme.of(context).extension<AviationColors>()!;
 
     // 1. Flight Category
     final fltcat = _metarData!['fltcat']?.toString() ?? 'N/A';
     Color catColor = theme.colorScheme.onSurface;
     switch (fltcat) {
-      case 'VFR': catColor = isDark ? Colors.greenAccent : Colors.green; break;
-      case 'MVFR': catColor = Colors.blueAccent; break;
-      case 'IFR': catColor = isDark ? Colors.redAccent : Colors.red; break;
-      case 'LIFR': catColor = Colors.purpleAccent; break;
+      case 'VFR': catColor = aviationColors.vfr ?? Colors.green; break;
+      case 'MVFR': catColor = aviationColors.mvfr ?? Colors.blue; break;
+      case 'IFR': catColor = aviationColors.ifr ?? Colors.red; break;
+      case 'LIFR': catColor = aviationColors.lifr ?? Colors.purple; break;
       default: catColor = Colors.grey;
     }
 
@@ -1414,12 +1417,13 @@ class _GlassLocateButton extends StatelessWidget {
   Widget build(BuildContext context) {
     // Determine Theme Brightness
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final aviationColors = Theme.of(context).extension<AviationColors>()!;
 
     // --- COLOR LOGIC ---
     // Dark Mode: Background = Charcoal (0xFF333333), Icon = Light Blue Accent
     // Light Mode: Background = White, Icon = Deep Blue (Colors.blue)
-    final Color bgColor = isDark ? const Color(0xFF333333) : Colors.white;
-    final Color iconColor = isDark ? Colors.lightBlueAccent : Colors.blue;
+    final Color bgColor = aviationColors.mapButtonBg ?? (isDark ? const Color(0xFF333333) : Colors.white);
+    final Color iconColor = aviationColors.mapButtonIcon ?? (isDark ? Colors.lightBlueAccent : Colors.blue);
     
     // --- SHADOW LOGIC ---
     // Subtle shadow in Light Mode to pop against map/background
@@ -1570,13 +1574,13 @@ class _NearestAirportsSheetState extends State<NearestAirportsSheet> {
     _searchAirports();
   }
 
-  Color _getCategoryColor(String? cat, bool isDark) {
+  Color _getCategoryColor(String? cat, AviationColors colors) {
     if (cat == null) return Colors.grey;
     switch (cat.toUpperCase()) {
-      case 'VFR': return isDark ? Colors.greenAccent : Colors.green;
-      case 'MVFR': return isDark ? Colors.blueAccent : Colors.blue;
-      case 'IFR': return isDark ? Colors.redAccent : Colors.red;
-      case 'LIFR': return isDark ? Colors.purpleAccent : Colors.purple;
+      case 'VFR': return colors.vfr ?? Colors.green;
+      case 'MVFR': return colors.mvfr ?? Colors.blue;
+      case 'IFR': return colors.ifr ?? Colors.red;
+      case 'LIFR': return colors.lifr ?? Colors.purple;
       default: return Colors.grey;
     }
   }
@@ -1585,6 +1589,7 @@ class _NearestAirportsSheetState extends State<NearestAirportsSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final aviationColors = Theme.of(context).extension<AviationColors>()!;
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.85,
@@ -1622,11 +1627,11 @@ class _NearestAirportsSheetState extends State<NearestAirportsSheet> {
                     initialValue: _currentRadius,
                     offset: const Offset(0, 40),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    color: isDark ? const Color(0xFF2C2C2C) : Colors.white,
+                    color: aviationColors.distanceMenuBg ?? (isDark ? const Color(0xFF2C2C2C) : Colors.white),
                     onSelected: _updateRadius,
                     itemBuilder: (context) => [10, 25, 50, 100].map((r) => PopupMenuItem(
                       value: r,
-                      child: Text("$r nm", style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
+                      child: Text("$r nm", style: TextStyle(fontWeight: FontWeight.bold, color: aviationColors.distanceMenuText ?? theme.colorScheme.onSurface)),
                     )).toList(),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -1701,14 +1706,14 @@ class _NearestAirportsSheetState extends State<NearestAirportsSheet> {
                                               Container(
                                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                 decoration: BoxDecoration(
-                                                  color: _getCategoryColor(cat, isDark).withOpacity(0.2),
+                                                  color: _getCategoryColor(cat, aviationColors).withOpacity(0.2),
                                                   borderRadius: BorderRadius.circular(4),
-                                                  border: Border.all(color: _getCategoryColor(cat, isDark), width: 1),
+                                                  border: Border.all(color: _getCategoryColor(cat, aviationColors), width: 1),
                                                 ),
                                                 child: Text(
                                                   cat,
                                                   style: TextStyle(
-                                                    color: _getCategoryColor(cat, isDark),
+                                                    color: _getCategoryColor(cat, aviationColors),
                                                     fontWeight: FontWeight.bold,
                                                     fontSize: 10,
                                                   ),

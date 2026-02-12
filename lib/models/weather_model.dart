@@ -8,11 +8,11 @@ class WeatherModel {
   final String condition;
   final double? visibility; // Meters
   final String? flightCategory;
-  
+
   // Ceiling split for dynamic units
   final double? ceilingHeight; // Meters
   final String? ceilingType; // "Overcast", "Broken", "Below Aircraft", etc.
-  
+
   final double? densityAltitude; // Meters
   final String stationId;
   final double altitudeFt; // User's Altitude in Feet (Input)

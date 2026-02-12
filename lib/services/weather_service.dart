@@ -78,7 +78,7 @@ class WeatherService {
   /// Sends METAR data to Gemini AI to generate a safety score and summary.
   static Future<Map<String, dynamic>> analyzeSafety(
       Map<String, dynamic> metarData, GenerativeModel model) async {
-    
+
     // Deduction System Prompt
     final prompt = """
       Act as a Chief Pilot. Analyze this METAR data: ${json.encode(metarData)}.
@@ -88,9 +88,9 @@ class WeatherService {
       - Visibility < 3SM (-20 pts)
       - Wind > 15kt (-10 pts)
       - Rain/Snow present (-15 pts)
-      
+
       Return a specific integer (e.g., 84, 65). DO NOT return 0 or 100 unless conditions are extreme.
-      
+
       Return ONLY valid JSON: {"score": <int>, "summary": "<string, max 30 words>"}
       """;
 
