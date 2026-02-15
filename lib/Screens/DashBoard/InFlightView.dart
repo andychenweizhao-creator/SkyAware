@@ -5,7 +5,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
-import 'package:latlong2/latlong.dart' hide Path;
+import 'package:latlong2/latlong.dart' hide Path; // HIDE Path to avoid conflict with dart:ui.Path
 import 'package:geolocator/geolocator.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:provider/provider.dart';
@@ -14,10 +14,11 @@ import 'Maps/maps.dart';
 import 'WeatherFeature.dart';
 import '../../services/terrain_service.dart';
 import 'CollapsibleLayerMenu.dart';
-import '../../services/airport_database_service.dart';
+import '../../services/airport_database_service.dart'; // Local DB
+
 import '../../UI/AppAnimations.dart';
 import '../../UI/AirportDetailSheet.dart';
-import '../../UI/AirportStatusPopup.dart';
+import '../../UI/AirportStatusPopup.dart'; // NEW: Reusable Popup
 import '../../services/ai_emergency_service.dart';
 import '../../UI/EmergencyOverlay.dart';
 import '../../services/weather_service.dart'; // Ensure WeatherService is imported
@@ -1920,6 +1921,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
                 dtgNm: totalDist,
                 eteMinutes: eteMinutes,
                 legs: legData,
+                altitude: _currentAltitudeFeet,
               ),
             ),
         ],
@@ -1964,6 +1966,7 @@ class FlightInfoPanel extends StatefulWidget {
   final double dtgNm;
   final double eteMinutes;
   final List<LegData> legs;
+  final double? altitude;
 
   const FlightInfoPanel({
     super.key,
@@ -1972,6 +1975,7 @@ class FlightInfoPanel extends StatefulWidget {
     required this.dtgNm,
     required this.eteMinutes,
     required this.legs,
+    this.altitude,
   });
 
   @override
@@ -2067,6 +2071,7 @@ class _FlightInfoPanelState extends State<FlightInfoPanel> with SingleTickerProv
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(child: _buildStatBox("GS", "${widget.gsKts.toStringAsFixed(0)}", "KT", theme, aviationColors)),
+                      Expanded(child: _buildStatBox("ALT", widget.altitude?.toStringAsFixed(0) ?? "---", "FT", theme, aviationColors)),
                       Expanded(child: _buildStatBox("TRK", "${widget.track.round()}°", "", theme, aviationColors)),
                       Expanded(child: _buildStatBox("DTG", widget.dtgNm.toStringAsFixed(1), "NM", theme, aviationColors)),
                       Expanded(child: _buildStatBox("ETE", _formatDuration(widget.eteMinutes), "", theme, aviationColors)),

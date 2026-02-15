@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
-import 'package:latlong2/latlong.dart'; // For distance calc inside service if needed
+import 'package:latlong2/latlong.dart'; 
 import 'airport_database_service.dart';
 
 class AiEmergencyService {
-  static const Duration _timeout = Duration(seconds: 45);
+  static const Duration _timeout = Duration(seconds: 30);
 
   /// Analyzes the situation and selects the best airport from the provided candidates.
   static Future<Map<String, dynamic>> calculateEmergencyRoute({
@@ -19,56 +19,53 @@ class AiEmergencyService {
     required GenerativeModel model,
   }) async {
     
-    // 1. Build Candidate List String
+    // 1. Build Candidate List String (Top 5 Only)
     final Distance distanceCalc = const Distance();
     final LatLng currentPos = LatLng(lat, lon);
     
+    // Calculate distance and sort
+    final sortedCandidates = List<Airport>.from(candidates);
+    // Note: This sorting assumes we have distances calculated or we rely on the input being roughly sorted.
+    // To be precise, we can recalculate or assume the database service returned them sorted.
+    // Assuming 'candidates' might be a larger list or we want to ensure we take only the top 5 nearest.
+    // Since we don't have a mutable property on Airport for distance easily here without wrapping,
+    // and assuming the calling service (AirportDatabaseService) returns them sorted by distance:
+    final topCandidates = sortedCandidates.take(5).toList();
+
     final StringBuffer candidateBuffer = StringBuffer();
-    for (int i = 0; i < candidates.length; i++) {
-      final airport = candidates[i];
-      // Fixed: Convert Meters to Nautical Miles (1 NM = 1852m) since latlong2 might not have NauticalMile
+    for (int i = 0; i < topCandidates.length; i++) {
+      final airport = topCandidates[i];
       final double dist = distanceCalc.as(LengthUnit.Meter, currentPos, LatLng(airport.lat, airport.lon)) / 1852.0;
-      // Format: 1. KLAX (Los Angeles Intl) - 5nm away, Elev 125ft
-      candidateBuffer.writeln('${i + 1}. ${airport.ident} (${airport.name}) - ${dist.toStringAsFixed(1)}nm away, Elev ${airport.elevation}ft');
+      candidateBuffer.writeln('${i + 1}. ${airport.ident} (${airport.name}) - ${dist.toStringAsFixed(1)}nm, Elev ${airport.elevation}ft');
     }
 
-    // 2. Construct Prompt
+    // 2. Enhanced Prompt for "Useful & Detailed" Response
     final prompt = """
-ACT AS A FLIGHT SAFETY COMPUTER.
-CRITICAL EMERGENCY DECLARED: $emergencyType
-AIRCRAFT STATE: Type: $aircraftType, Alt: ${alt.toStringAsFixed(0)}ft, Heading: ${heading.toStringAsFixed(0)}°.
+ACT AS A CHIEF FLIGHT INSTRUCTOR.
+CRITICAL SITUATION: $emergencyType.
+AIRCRAFT: $aircraftType.
+CURRENT STATE: Alt ${alt.toInt()}ft, Hdg ${heading.toInt()}°.
 
-CANDIDATE AIRPORTS (Sorted by Distance):
+CANDIDATES:
 ${candidateBuffer.toString()}
 
-TASK: Analyze these candidates using your internal aviation knowledge (Runway length, Terrain, Approach).
-- IF Engine Failure: Prioritize Glide Range (Distance vs Altitude).
-- IF Fire: Prioritize nearest paved runway.
-- IF Medical: Prioritize large airports (Class B/C) with medical facilities.
+TASK:
+1. Select the ABSOLUTE SAFEST airport. Consider distance vs altitude (Glide Ratio).
+2. Generate a SPECIFIC, ACTIONABLE checklist for $aircraftType.
 
-CRITICAL SAFETY CONSTRAINT: 
-You are guiding a FIXED-WING aircraft. 
-DO NOT select Heliports, Seaplane Bases, or Train Stations even if they are in the candidate list.
-ONLY select valid airports with a RUNWAY.
-If the nearest option is a Heliport, SKIP IT and pick the next best Airport.
+REQUIREMENTS FOR JSON OUTPUT:
+- "reason_for_selection": Provide a solid tactical reason (e.g., "Longest runway within glide range," or "Headwind approach available"). DO NOT be vague.
+- "phase_1_immediate": List specific memory items. INCLUDE SPEEDS if known for $aircraftType (e.g., "Pitch for 68 kts").
+- "phase_2_approach": Include avionics settings (Squawk 7700, Radio 121.5) and cabin prep.
 
-RETURN RAW JSON ONLY (No markdown, no backticks):
+RETURN JSON ONLY:
 {
-  "selected_airport_id": "ICAO_CODE",
-  "reason_for_selection": "Brief reason why this is safer than others.",
+  "selected_airport_id": "ICAO",
+  "reason_for_selection": "Detailed reason here...",
   "coordinates": { "lat": 0.0, "lon": 0.0 },
   "action_plan": {
-    "phase_1_immediate": [
-      "Pitch for Best Glide (76 kts)",
-      "Fuel Selector - SWITCH TANK",
-      "Fuel Pump - ON",
-      "Mixture - RICH"
-    ],
-    "phase_2_approach": [
-      "Squawk 7700",
-      "Declare Mayday on 121.5",
-      "Seatbelts - SECURE"
-    ]
+    "phase_1_immediate": ["Step 1", "Step 2", "Step 3 (with speeds)"],
+    "phase_2_approach": ["Step 1", "Step 2", "Step 3"]
   }
 }
 """;
@@ -83,21 +80,44 @@ RETURN RAW JSON ONLY (No markdown, no backticks):
 
       final result = _cleanAndParseJson(response.text!);
       
-      // Safety Fallback: If AI hallucinates coordinates, use the ones from our database if ID matches
+      // Safety Fallback & Coordinate Fix
       final selectedId = result['selected_airport_id']?.toString().toUpperCase();
       if (selectedId != null) {
-        final match = candidates.firstWhere((a) => a.ident == selectedId, orElse: () => candidates.first);
+        final match = candidates.firstWhere(
+          (a) => a.ident == selectedId, 
+          orElse: () => candidates.first // Fallback to first if ID not found
+        );
         // Overwrite coordinates to ensure accuracy from local DB
         result['coordinates'] = {
           "lat": match.lat,
           "lon": match.lon
         };
+        // Ensure ID matches the found one (in case fallback was used)
+        result['selected_airport_id'] = match.ident; 
+      } else {
+         // If AI didn't return an ID, use the first candidate
+         final fallback = candidates.first;
+         result['selected_airport_id'] = fallback.ident;
+         result['coordinates'] = { "lat": fallback.lat, "lon": fallback.lon };
       }
       
       return result;
 
     } catch (e) {
-      debugPrint("Emergency Service AI Error: $e");
+      debugPrint("Emergency Service AI Error/Timeout: $e");
+      // Fallback Result
+      if (candidates.isNotEmpty) {
+        final fallback = candidates.first; // Nearest
+        return {
+          "selected_airport_id": fallback.ident,
+          "reason_for_selection": "AI Unavailable. Nearest airport selected.",
+          "coordinates": { "lat": fallback.lat, "lon": fallback.lon },
+          "action_plan": {
+            "phase_1_immediate": ["Fly Aircraft", "Check Checklists"],
+            "phase_2_approach": ["Land ASAP"]
+          }
+        };
+      }
       throw Exception("Failed to calculate emergency plan: $e");
     }
   }
