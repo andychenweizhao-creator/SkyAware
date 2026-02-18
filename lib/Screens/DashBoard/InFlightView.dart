@@ -383,6 +383,36 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     });
   }
   
+  void _checkWaypointArrival(LatLng currentPos) {
+    if (_activeRoutePoints.isEmpty) return;
+
+    final target = _activeRoutePoints.first;
+    final dist = const Distance().as(LengthUnit.Meter, currentPos, target.point);
+
+    // Threshold: 1 NM approx 1852 meters. User said 1.0 NM or 2000 meters.
+    if (dist < 2000) {
+      setState(() {
+        final reachedPoint = _activeRoutePoints.removeAt(0);
+        
+        String nextLabel = "Destination";
+        if (_activeRoutePoints.isNotEmpty) {
+          nextLabel = _activeRoutePoints.first.name ?? _activeRoutePoints.first.id;
+        } else {
+          nextLabel = "End of Route";
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Arrived at ${reachedPoint.name ?? reachedPoint.id}. Next: $nextLabel"),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.green[900],
+          )
+        );
+      });
+    }
+  }
+  
   void _showRouteOptions(BuildContext context, RoutePoint routePoint) {
     bool isInRoute = _activeRoutePoints.any((rp) => rp.id == routePoint.id);
     final stats = _simulateCompareStats(routePoint);
@@ -873,6 +903,9 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
           _currentAltitudeFeet = position.altitude * 3.28084;
           _altitudeController.text = _currentAltitudeFeet!.toStringAsFixed(0);
         });
+        
+        // --- ADDED Waypoint Check Here ---
+        _checkWaypointArrival(LatLng(position.latitude, position.longitude));
         
         if (!_isEmergencyMode && _isFollowing) {
           widget.mapController?.move(
