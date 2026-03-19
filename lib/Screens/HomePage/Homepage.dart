@@ -8,7 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
-import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -44,13 +44,13 @@ class _HomePageState extends State<HomePage> {
   DateTime _now = DateTime.now();
 
   // Gemini AI
-  GenerativeModel? _model;
+  HttpsCallable? _aiCallable;
   String _aiInsight = "";
   int? _aiSafetyScore;
   int _aiRequestId = 0; // To handle out-of-order responses
 
   // API Key for Gemini
-  final String _apiKey = "AIzaSyBqqjz5thRK3Lt6xQcivugnHReGkbgK9rY";
+  // final String _apiKey = "AIzaSyBqqjz5thRK3Lt6xQcivugnHReGkbgK9rY";
 
   static const Duration _geminiTimeout = Duration(seconds: 25);
   static const Duration _geminiRetryDelay = Duration(milliseconds: 600);
@@ -84,23 +84,24 @@ class _HomePageState extends State<HomePage> {
     _fetchUserLocation();
 
     // Initialize Gemini Model
-    try {
-      if (_apiKey.isNotEmpty) {
-        _model = GenerativeModel(
-          model: 'gemini-3-pro-preview',
-          apiKey: _apiKey,
-          generationConfig: GenerationConfig(responseMimeType: 'application/json'),
-          safetySettings: [
-            HarmCategory.harassment,
-            HarmCategory.hateSpeech,
-            HarmCategory.sexuallyExplicit,
-            HarmCategory.dangerousContent,
-          ].map((category) => SafetySetting(category, HarmBlockThreshold.none)).toList(),
-        );
-      }
-    } catch (e) {
-      debugPrint("Error initializing Gemini: $e");
-    }
+    // try {
+    //   if (_apiKey.isNotEmpty) {
+    //     _model = GenerativeModel(
+    //       model: 'gemini-3-pro-preview',
+    //       apiKey: _apiKey,
+    //       generationConfig: GenerationConfig(responseMimeType: 'application/json'),
+    //       safetySettings: [
+    //         HarmCategory.harassment,
+    //         HarmCategory.hateSpeech,
+    //         HarmCategory.sexuallyExplicit,
+    //         HarmCategory.dangerousContent,
+    //       ].map((category) => SafetySetting(category, HarmBlockThreshold.none)).toList(),
+    //     );
+    //   }
+    // } catch (e) {
+    //   debugPrint("Error initializing Gemini: $e");
+    // }
+    _aiCallable = FirebaseFunctions.instance.httpsCallable('askGemini');
   }
 
   @override
@@ -360,7 +361,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _analyzeWeatherWithGemini(Map<String, dynamic> metarData, int requestId) async {
-    if (_model == null) {
+    if (_aiCallable == null) {
       if (mounted && requestId == _aiRequestId) {
         setState(() {
           _aiInsight = "AI Co-Pilot not configured.";
@@ -385,45 +386,47 @@ class _HomePageState extends State<HomePage> {
       Return ONLY valid JSON: {"score": <int>, "summary": "<string, max 30 words>"}
       """;
 
-      final content = [Content.text(prompt)];
-      
-      // Retry logic
-      GenerateContentResponse response;
+      final requestData = <String, dynamic>{'prompt': prompt};
+
+      // Retry logic for Firebase Function
+      HttpsCallableResult response;
       try {
-        response = await _model!.generateContent(content).timeout(_geminiTimeout);
+        response = await _aiCallable!.call(requestData).timeout(_geminiTimeout);
       } on TimeoutException {
         await Future.delayed(_geminiRetryDelay);
-        response = await _model!.generateContent(content).timeout(_geminiTimeout);
+        response = await _aiCallable!.call(requestData).timeout(_geminiTimeout);
       }
 
       if (!mounted || requestId != _aiRequestId) return;
-      if (response.text == null) return;
+
+      // Extract text from the backend response
+      final text = response.data['result'] as String?;
+      if (text == null) return;
 
       // Robust Regex Parsing
-      final text = response.text!;
       final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(text);
 
       if (jsonMatch != null) {
-         final jsonString = jsonMatch.group(0)!;
-         try {
-           final Map<String, dynamic> aiResponse = json.decode(jsonString);
-           if (mounted && requestId == _aiRequestId) {
-             setState(() {
-               _aiSafetyScore = aiResponse['score'] as int?;
-               _aiInsight = aiResponse['summary']?.toString() ?? "Analysis available.";
-             });
-           }
-         } catch (e) {
-           debugPrint("JSON Parse Error: $e");
-           // Fallback to raw text if JSON fails
-           setState(() => _aiInsight = text);
-         }
+        final jsonString = jsonMatch.group(0)!;
+        try {
+          final Map<String, dynamic> aiResponse = json.decode(jsonString);
+          if (mounted && requestId == _aiRequestId) {
+            setState(() {
+              _aiSafetyScore = aiResponse['score'] as int?;
+              _aiInsight = aiResponse['summary']?.toString() ?? "Analysis available.";
+            });
+          }
+        } catch (e) {
+          debugPrint("JSON Parse Error: $e");
+          // Fallback to raw text if JSON fails
+          setState(() => _aiInsight = text);
+        }
       } else {
         setState(() => _aiInsight = text);
       }
 
     } catch (e) {
-      debugPrint("Gemini Error: $e");
+      debugPrint("Firebase Function Error: $e");
       if (mounted && requestId == _aiRequestId) {
         setState(() {
           _aiInsight = "Co-Pilot offline. Using fallback data.";

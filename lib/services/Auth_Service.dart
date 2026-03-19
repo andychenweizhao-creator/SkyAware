@@ -109,7 +109,12 @@ class AuthService {
     try {
       // Initialize if needed, though usually handled by the plugin.
       // With google_sign_in 7.x, we use authenticate()
+      await _googleSignIn.initialize(
+        serverClientId: '876460230034-runln6anedq3uh57adigi4121c88g3u0.apps.googleusercontent.com',
+      );
       final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
+
+
 
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
 

@@ -4,7 +4,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:skyaware/UI/theme_controller.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../../../UI/AppAnimations.dart';
 import '../../../UI/AirportDetailSheet.dart';
 
@@ -13,7 +13,8 @@ class RoutePoint {
   final String id;       // "KLAX" or "WP-1"
   final LatLng point;    // Coordinates
   final String type;     // 'origin', 'waypoint', 'destination', 'airport'
-  final String? name;    // Optional display name
+  final String? name;// Optional display name
+
   
   RoutePoint({required this.id, required this.point, required this.type, this.name});
 }
@@ -26,10 +27,11 @@ class Maps extends StatefulWidget {
   final List<Marker> airportMarkers; // Added for AI Airport Scanner
   final Function(LatLng)? onMapTap;
   final Function(TapPosition, LatLng)? onMapLongPress;
-  final Function(RoutePoint)? onRoutePointTap; // NEW: Callback for route point taps
-  final GenerativeModel? aiModel; // AI Model for airport search
+  final Function(RoutePoint)? onRoutePointTap;// NEW: Callback for route point taps
+  late final HttpsCallable aiCallable;
+   // AI Model for airport search
 
-  const Maps({
+ Maps({
     super.key,
     required this.mapController,
     this.weatherPolygons = const [],
@@ -39,8 +41,10 @@ class Maps extends StatefulWidget {
     this.onMapTap,
     this.onMapLongPress,
     this.onRoutePointTap,
-    this.aiModel,
-  });
+
+  }){
+   aiCallable = FirebaseFunctions.instance.httpsCallable('askGemini');
+  }
 
   @override
   State<Maps> createState() => _MapsState();

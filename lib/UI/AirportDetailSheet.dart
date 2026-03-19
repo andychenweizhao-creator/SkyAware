@@ -1,6 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:provider/provider.dart';
 import '../services/weather_service.dart';
 import '../services/unit_settings_service.dart';
@@ -8,13 +8,15 @@ import 'AppAnimations.dart';
 
 class AirportDetailSheet extends StatefulWidget {
   final String icao;
-  final GenerativeModel? aiModel;
+  late final HttpsCallable aiCallable;
 
-  const AirportDetailSheet({
+
+  AirportDetailSheet({
     super.key,
     required this.icao,
-    required this.aiModel,
-  });
+  }){
+    aiCallable = FirebaseFunctions.instance.httpsCallable('askGemini');
+}
 
   @override
   State<AirportDetailSheet> createState() => _AirportDetailSheetState();
@@ -44,9 +46,9 @@ class _AirportDetailSheetState extends State<AirportDetailSheet> {
       
       Map<String, dynamic>? analysis;
       // 2. Analyze with AI if model exists
-      if (widget.aiModel != null) {
+      if (widget.aiCallable != null) {
         try {
-          analysis = await WeatherService.analyzeSafety(metar, widget.aiModel!);
+          analysis = await WeatherService.analyzeSafety(metar, widget.aiCallable!);
         } catch (e) {
           debugPrint("AI Analysis failed: $e");
           // Continue without AI data

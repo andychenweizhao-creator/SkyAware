@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:xml/xml.dart';
 import 'package:geolocator/geolocator.dart'; 
 
@@ -66,32 +66,18 @@ class _DashBoardState extends State<DashBoard> {
   List<Marker> _airportMarkers = [];
   Timer? _mapDebounce; 
   StreamSubscription? _mapEventSubscription; 
-  Timer? _weatherTimer; 
+  Timer? _weatherTimer;
 
   // Gemini AI Model
-  GenerativeModel? _model;
-  final String _kGeminiApiKey = 'AIzaSyBqqjz5thRK3Lt6xQcivugnHReGkbgK9rY';
+
 
   @override
   void initState() {
     super.initState();
     // Initialize the Gemini Model
-    if (_kGeminiApiKey.isNotEmpty && _kGeminiApiKey != 'YOUR_GEMINI_API_KEY') {
-      try {
-        _model = GenerativeModel(
-          model: 'gemini-3-pro-preview', 
-          apiKey: _kGeminiApiKey,
-          safetySettings: [
-            HarmCategory.harassment,
-            HarmCategory.hateSpeech,
-            HarmCategory.sexuallyExplicit,
-            HarmCategory.dangerousContent,
-          ].map((category) => SafetySetting(category, HarmBlockThreshold.none)).toList(),
-        );
-      } catch (e) {
-        print("Gemini Init Error: $e");
-      }
-    }
+    // if (_kGeminiApiKey.isNotEmpty && _kGeminiApiKey != 'YOUR_GEMINI_API_KEY') {
+    //
+    // }
     
     // Load Airport Database & Initial Update
     AirportDatabaseService().loadDatabase().then((_) {
@@ -682,8 +668,7 @@ class _DashBoardState extends State<DashBoard> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => AirportDetailSheet(
-        icao: airport.ident, 
-        aiModel: _model
+        icao: airport.ident,
       ),
     );
   }
@@ -1099,7 +1084,7 @@ class _DashBoardState extends State<DashBoard> {
                   onRoutePointTap: (routePoint) {
                     _showRouteOptions(context, routePoint, null);
                   },
-                  aiModel: _model, // Pass AI model here
+                   // Pass AI model here
                 )),
 
             // Side Menu (Now includes Reset logic)
@@ -1285,10 +1270,6 @@ class _DashBoardState extends State<DashBoard> {
   }
 
   Future<String> _getAiSummary(List<WeatherFeature> features) async {
-    if (_model == null) {
-      return "AI model not initialized. Please add your Gemini API key.";
-    }
-
     final rawData = features.map((f) => f.rawProperties).toList();
     final jsonData = jsonEncode(rawData);
 
@@ -1296,9 +1277,27 @@ class _DashBoardState extends State<DashBoard> {
     You are a flight safety Co-Pilot. The user tapped a location with these weather hazards: $jsonData. Analyze the Severity, Cloud Tops/Bases, and give a tactical recommendation. Be concise.
     """;
 
-    final content = [Content.text(prompt)];
-    final response = await _model!.generateContent(content);
-    return response.text ?? "Could not generate a summary.";
+    try {
+      // 1. Point to your specific Cloud Function name
+      final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('askGemini');
+
+      // 2. Call the function and pass the prompt in the data map
+      final result = await callable.call(<String, dynamic>{
+        'prompt': prompt,
+      });
+
+      // 3. Extract the result we sent back from the Node.js backend
+      return result.data['result'] as String;
+
+    } on FirebaseFunctionsException catch (e) {
+      // Catch specific Firebase backend errors (like our usage cap or auth errors)
+      print('Cloud Function Error: ${e.code} - ${e.message}');
+      return "Co-Pilot Error: ${e.message}";
+    } catch (e) {
+      // Catch standard network/Flutter errors
+      print('Unknown Error: $e');
+      return "Could not reach the Co-Pilot. Please check your connection.";
+    }
   }
 
   (int base, int top) _parseAltitudeRange(Map<String, dynamic> rawData) {

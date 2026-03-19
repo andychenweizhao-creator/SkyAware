@@ -491,7 +491,8 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueAccent.withOpacity(0.2),
+                      backgroundColor: Colors.blueAccent.
+                      withOpacity(0.2),
                       foregroundColor: Colors.blueAccent,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       side: const BorderSide(color: Colors.blueAccent),
@@ -572,7 +573,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
       backgroundColor: Colors.transparent,
       builder: (ctx) => AirportDetailSheet(
         icao: airport.ident, 
-        aiModel: _model
+
       ),
     );
   }

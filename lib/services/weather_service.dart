@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'dart:async';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:http/http.dart' as http;
-import 'package:google_generative_ai/google_generative_ai.dart';
+// Removed the google_generative_ai import!
 
 class WeatherService {
   static const Duration _geminiTimeout = Duration(seconds: 25);
@@ -26,7 +27,7 @@ class WeatherService {
           // We also attach geometry for location if needed later
           final properties = feature['properties'] as Map<String, dynamic>;
           if (feature['geometry'] != null && feature['geometry']['coordinates'] != null) {
-             properties['geometry'] = feature['geometry'];
+            properties['geometry'] = feature['geometry'];
           }
           return properties;
         } else {
@@ -70,6 +71,7 @@ class WeatherService {
       }
       return results;
     } catch (e) {
+      // Note: Consider replacing print with debugPrint in production
       print("WeatherService Error: $e");
       return {};
     }
@@ -77,7 +79,7 @@ class WeatherService {
 
   /// Sends METAR data to Gemini AI to generate a safety score and summary.
   static Future<Map<String, dynamic>> analyzeSafety(
-      Map<String, dynamic> metarData, GenerativeModel model) async {
+      Map<String, dynamic> metarData, HttpsCallable model) async {
 
     // Deduction System Prompt
     final prompt = """
@@ -94,22 +96,26 @@ class WeatherService {
       Return ONLY valid JSON: {"score": <int>, "summary": "<string, max 30 words>"}
       """;
 
-    final content = [Content.text(prompt)];
-
     try {
-      GenerateContentResponse response;
+      HttpsCallableResult response;
+      // Package the prompt into the map expected by your Node.js backend
+      final requestData = <String, dynamic>{'prompt': prompt};
+
       try {
-        response = await model.generateContent(content).timeout(_geminiTimeout);
+        // Call the Firebase Function instead of the local SDK
+        response = await model.call(requestData).timeout(_geminiTimeout);
       } on TimeoutException {
         await Future.delayed(_geminiRetryDelay);
-        response = await model.generateContent(content).timeout(_geminiTimeout);
+        response = await model.call(requestData).timeout(_geminiTimeout);
       }
 
-      if (response.text == null) {
+      // Extract the text using the 'result' key we defined in the index.js file
+      final String? text = response.data['result'] as String?;
+
+      if (text == null) {
         throw Exception("AI returned empty response");
       }
 
-      final text = response.text!;
       // Robust Regex Parsing to extract JSON object
       final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(text);
 
@@ -119,7 +125,7 @@ class WeatherService {
           return json.decode(jsonString) as Map<String, dynamic>;
         } catch (e) {
           // Fallback if strict JSON parsing fails but regex found something resembling JSON
-           throw Exception("JSON Parse Error: $e");
+          throw Exception("JSON Parse Error: $e");
         }
       } else {
         // Fallback structure if no JSON found
@@ -129,7 +135,7 @@ class WeatherService {
         };
       }
     } catch (e) {
-      throw Exception("Gemini Error: $e");
+      throw Exception("Firebase Function Error: $e");
     }
   }
 }
