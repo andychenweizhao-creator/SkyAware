@@ -6,8 +6,10 @@ import '../../Screens/HomePage/Homepage.dart';
 import '../../Screens/DashBoard/DashBoard.dart';
 import '../../Screens/Settings/Settings.dart';
 
-class Navigationbar extends StatefulWidget{
-  const Navigationbar({super.key});
+class Navigationbar extends StatefulWidget {
+  final int initialIndex;
+
+  const Navigationbar({super.key, this.initialIndex = 0});
 
   @override
   State<StatefulWidget> createState() {
@@ -15,9 +17,15 @@ class Navigationbar extends StatefulWidget{
   }
 }
 
-class NavigationbarState extends State<Navigationbar>{
-  int currentIndex = 0;
+class NavigationbarState extends State<Navigationbar> {
+  late int currentIndex;
   bool _hideNavBar = false; // State to toggle nav bar visibility (In-flight or Emergency)
+
+  @override
+  void initState() {
+    super.initState();
+    currentIndex = widget.initialIndex;
+  }
 
   void onTabTapped(int index) {
     setState(() {

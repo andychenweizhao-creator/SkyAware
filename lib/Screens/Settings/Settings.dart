@@ -1,10 +1,12 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:skyaware/UI/theme_controller.dart';
 import '../../models/UserModel.dart';
 import '../../services/FirebaseService.dart';
+import '../../services/unit_settings_service.dart' as uss;
 import '../Login/login_page.dart';
 import 'unit_preferences_section.dart';
 import '../../main.dart';
@@ -73,6 +75,7 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
+        automaticallyImplyLeading: false, // Prevents back button from appearing since it's in a bottom nav tab
         iconTheme: IconThemeData(color: textColor),
       ),
       body: Stack(
@@ -141,141 +144,236 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
 
               final User? currentUser = snapshot.data;
 
-              return FadeTransition(
-                opacity: _fadeAnimation,
-                child: SlideTransition(
-                  position: _slideAnimation,
-                  child: SafeArea(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                      child: Column(
-                        children: [
-                          // Profile Section
-                          _buildProfileSection(currentUser, theme, aviationColors, textColor, secondaryTextColor, containerColor, borderColor),
-                          
-                          const SizedBox(height: 24),
+              Widget buildSettingsContent(Map<String, dynamic> prefs) {
+                bool notificationsEnabled = _notificationsEnabled;
+                if (prefs['notificationsEnabled'] != null) {
+                  final val = prefs['notificationsEnabled'];
+                  notificationsEnabled = val is bool ? val : val.toString().toLowerCase() == 'true';
+                }
+                
+                bool currentIsDark = (prefs['DarkMode'] != null) ? (prefs['DarkMode'] == 'Dark') : isDark;
 
-                          // Unit Preferences Section
-                          UnitPreferencesSection(
-                            textColor: textColor,
-                            secondaryTextColor: secondaryTextColor,
-                            containerColor: containerColor,
-                            borderColor: borderColor,
-                            isDark: isDark, // Kept for now as UnitPreferencesSection might use it, but logic should ideally be inside
-                            onUnitChange: (key,value){
-                              _updatePreference(key: key, value: value);
-                            }
-                          ),
+                return FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: SlideTransition(
+                    position: _slideAnimation,
+                    child: SafeArea(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        child: Column(
+                          children: [
+                            // Profile Section
+                            _buildProfileSection(currentUser, theme, aviationColors, textColor, secondaryTextColor, containerColor, borderColor),
+                            
+                            const SizedBox(height: 24),
 
-                          const SizedBox(height: 24),
-                          
-                          // Settings Groups
-                          _buildSettingsGroup(
-                            title: "General",
-                            textColor: secondaryTextColor,
-                            containerColor: containerColor,
-                            borderColor: borderColor,
-                            children: [
-                              _buildSettingsTile(
-                                icon: Icons.notifications_outlined,
-                                title: "Notifications",
-                                textColor: textColor,
-                                iconBgColor: containerColor,
-                                trailing: Switch(
-                                  value: _notificationsEnabled,
-                                  onChanged: (val) => setState(() => _notificationsEnabled = val),
-                                  activeColor: theme.primaryColor,
+                            // Unit Preferences Section
+                            UnitPreferencesSection(
+                              textColor: textColor,
+                              secondaryTextColor: secondaryTextColor,
+                              containerColor: containerColor,
+                              borderColor: borderColor,
+                              isDark: currentIsDark, // Used the value evaluated from Cloud Data
+                              distanceUnit: prefs['DistanceUnit']?.toString(),
+                              altitudeUnit: prefs['Altitude']?.toString(),
+                              pressureUnit: prefs['Pressure']?.toString(),
+                              temperatureUnit: prefs['Temperature']?.toString(),
+                              onUnitChange: (key,value){
+                                _updatePreference(key: key, value: value);
+                              }
+                            ),
+
+                            const SizedBox(height: 24),
+                            
+                            // Settings Groups
+                            _buildSettingsGroup(
+                              title: "General",
+                              textColor: secondaryTextColor,
+                              containerColor: containerColor,
+                              borderColor: borderColor,
+                              children: [
+                                _buildSettingsTile(
+                                  icon: Icons.notifications_outlined,
+                                  title: "Notifications",
+                                  textColor: textColor,
+                                  iconBgColor: containerColor,
+                                  trailing: Switch(
+                                    value: notificationsEnabled,
+                                    onChanged: (val) {
+                                      setState(() => _notificationsEnabled = val);
+                                      _updatePreference(key: 'notificationsEnabled', value: val);
+                                    },
+                                    activeColor: theme.primaryColor,
+                                  ),
                                 ),
-                              ),
-                              _buildSettingsTile(
-                                icon: Icons.dark_mode_outlined,
-                                title: "Dark Mode",
-                                textColor: textColor,
-                                iconBgColor: containerColor,
-                                trailing: Switch(
-                                  value: isDark,
-                                  onChanged: (val) {
-                                    themeController.toggleTheme(val);
-                                    _updatePreference(key: 'darkMode', value: val);
-                                  },
-                                  activeColor: theme.primaryColor,
-                                )
-                              ),
-                              _buildSettingsTile(
-                                icon: Icons.language,
-                                title: "Language",
-                                textColor: textColor,
-                                iconBgColor: containerColor,
-                                trailing: Text("English", style: TextStyle(color: secondaryTextColor)),
-                                onTap: () {},
-                              ),
-                            ],
-                          ),
-                          
-                          const SizedBox(height: 20),
-                          
-                          _buildSettingsGroup(
-                            title: "Support & About",
-                            textColor: secondaryTextColor,
-                            containerColor: containerColor,
-                            borderColor: borderColor,
-                            children: [
-                              _buildSettingsTile(
-                                icon: Icons.help_outline,
-                                title: "Help & Support",
-                                textColor: textColor,
-                                iconBgColor: containerColor,
-                                onTap: () {},
-                              ),
-                              _buildSettingsTile(
-                                icon: Icons.info_outline,
-                                title: "About SkyAware",
-                                textColor: textColor,
-                                iconBgColor: containerColor,
-                                onTap: () {},
-                              ),
-                              _buildSettingsTile(
-                                icon: Icons.privacy_tip_outlined,
-                                title: "Privacy Policy",
-                                textColor: textColor,
-                                iconBgColor: containerColor,
-                                onTap: () {},
-                              ),
-                            ],
-                          ),
-                          
-                          const SizedBox(height: 30),
-                          
-                          if (currentUser != null)
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: _logout,
-                                icon: const Icon(Icons.logout, color: Colors.white), // Always white for logout (red button)
-                                label: const Text("Log Out"),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: theme.colorScheme.error.withOpacity(0.2),
-                                  foregroundColor: theme.colorScheme.error,
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                    side: BorderSide(color: theme.colorScheme.error.withOpacity(0.5)),
+                                _buildSettingsTile(
+                                  icon: Icons.dark_mode_outlined,
+                                  title: "Dark Mode",
+                                  textColor: textColor,
+                                  iconBgColor: containerColor,
+                                  trailing: Switch(
+                                    value: currentIsDark,
+                                    onChanged: (val) {
+                                      themeController.toggleTheme(val);
+                                      _updatePreference(key: 'darkMode', value: val);
+                                    },
+                                    activeColor: theme.primaryColor,
+                                  )
+                                ),
+                                _buildSettingsTile(
+                                  icon: Icons.language,
+                                  title: "Language",
+                                  textColor: textColor,
+                                  iconBgColor: containerColor,
+                                  trailing: Text("English", style: TextStyle(color: secondaryTextColor)),
+                                  onTap: () {},
+                                ),
+                              ],
+                            ),
+                            
+                            const SizedBox(height: 20),
+                            
+                            _buildSettingsGroup(
+                              title: "Support & About",
+                              textColor: secondaryTextColor,
+                              containerColor: containerColor,
+                              borderColor: borderColor,
+                              children: [
+                                _buildSettingsTile(
+                                  icon: Icons.help_outline,
+                                  title: "Help & Support",
+                                  textColor: textColor,
+                                  iconBgColor: containerColor,
+                                  onTap: () {},
+                                ),
+                                _buildSettingsTile(
+                                  icon: Icons.info_outline,
+                                  title: "About SkyAware",
+                                  textColor: textColor,
+                                  iconBgColor: containerColor,
+                                  onTap: () {},
+                                ),
+                                _buildSettingsTile(
+                                  icon: Icons.privacy_tip_outlined,
+                                  title: "Privacy Policy",
+                                  textColor: textColor,
+                                  iconBgColor: containerColor,
+                                  onTap: () {},
+                                ),
+                              ],
+                            ),
+                            
+                            const SizedBox(height: 30),
+                            
+                            if (currentUser != null && !currentUser.isAnonymous)
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: _logout,
+                                  icon: const Icon(Icons.logout, color: Colors.white), // Always white for logout (red button)
+                                  label: const Text("Log Out"),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: theme.colorScheme.error.withOpacity(0.2),
+                                    foregroundColor: theme.colorScheme.error,
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      side: BorderSide(color: theme.colorScheme.error.withOpacity(0.5)),
+                                    ),
                                   ),
                                 ),
                               ),
+                            
+                            const SizedBox(height: 20),
+                            Text(
+                              "Version 1.0.0",
+                              style: TextStyle(color: secondaryTextColor, fontSize: 12),
                             ),
-                          
-                          const SizedBox(height: 20),
-                          Text(
-                            "Version 1.0.0",
-                            style: TextStyle(color: secondaryTextColor, fontSize: 12),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
+                );
+              }
+
+              if (currentUser == null || currentUser.isAnonymous) {
+                return buildSettingsContent({});
+              }
+
+              return StreamBuilder<DocumentSnapshot>(
+                stream: FirebaseFirestore.instance.collection('users').doc(currentUser.uid).snapshots(),
+                builder: (context, docSnapshot) {
+                  if (docSnapshot.connectionState == ConnectionState.waiting) {
+                    return Center(child: CircularProgressIndicator(color: textColor));
+                  }
+                  
+                  final userData = docSnapshot.data?.data() as Map<String, dynamic>?;
+                  final prefs = userData?['preferences'] as Map<String, dynamic>? ?? {};
+
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (prefs.isEmpty) return;
+
+                    final tc = Provider.of<ThemeController>(context, listen: false);
+                    final unitProvider = Provider.of<uss.UnitSettingsProvider>(context, listen: false);
+
+                    // Sync Theme
+                    if (prefs['DarkMode'] != null) {
+                      bool fetchedIsDark = prefs['DarkMode'] == 'Dark';
+                      if (tc.isDarkMode != fetchedIsDark) {
+                        tc.toggleTheme(fetchedIsDark);
+                      }
+                    }
+
+                    // Sync Units
+                    if (prefs['DistanceUnit'] != null) {
+                      final dist = uss.DistanceSpeedUnit.values.firstWhere(
+                        (e) => e.name == prefs['DistanceUnit'],
+                        orElse: () => unitProvider.distanceSpeedUnit,
+                      );
+                      if (dist != unitProvider.distanceSpeedUnit) {
+                        unitProvider.setDistanceSpeedUnit(dist);
+                      }
+                    }
+
+                    if (prefs['Altitude'] != null) {
+                      final alt = uss.AltitudeUnit.values.firstWhere(
+                        (e) => e.name == prefs['Altitude'],
+                        orElse: () => unitProvider.altitudeUnit,
+                      );
+                      if (alt != unitProvider.altitudeUnit) {
+                        unitProvider.setAltitudeUnit(alt);
+                      }
+                    }
+
+                    if (prefs['Pressure'] != null) {
+                      String pressureStr = prefs['Pressure'];
+                      if (pressureStr.toLowerCase() == 'hpa') pressureStr = 'hPa';
+                      if (pressureStr.toLowerCase() == 'inhg') pressureStr = 'inHg';
+                      
+                      final press = uss.PressureUnit.values.firstWhere(
+                        (e) => e.name == pressureStr,
+                        orElse: () => unitProvider.pressureUnit,
+                      );
+                      if (press != unitProvider.pressureUnit) {
+                        unitProvider.setPressureUnit(press);
+                      }
+                    }
+
+                    if (prefs['Temperature'] != null) {
+                      final temp = uss.TemperatureUnit.values.firstWhere(
+                        (e) => e.name == prefs['Temperature'],
+                        orElse: () => unitProvider.temperatureUnit,
+                      );
+                      if (temp != unitProvider.temperatureUnit) {
+                        unitProvider.setTemperatureUnit(temp);
+                      }
+                    }
+                  });
+                  
+                  return buildSettingsContent(prefs);
+                },
               );
             },
           ),
@@ -283,55 +381,45 @@ class _SettingsState extends State<Settings> with SingleTickerProviderStateMixin
       ),
     );
   }
-  _updatePreference({
+
+  Future<void> _updatePreference({
     required String key,
     required dynamic value
   }) async {
+    print('1. UI TRIGGERED: Switch flipped for key: $key, raw value: $value');
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
+      print('2. ERROR: No user logged in. Aborting save.');
       return;
     }
-    Usermodel user ;
-    final fs = Firebaseservice();
-    final userData = await fs.getUserData();
-    if(userData != null) {
-      user = Usermodel.fromMap(userData);
+
+    String firebaseKey = key;
+    if (key == 'darkMode') {
+      firebaseKey = 'DarkMode';
+    }
+
+    dynamic firebaseValue;
+
+    if (key == 'darkMode') {
+      bool isDark = value as bool;
+      firebaseValue = isDark ? DarkLight.Dark.name : DarkLight.Light.name;
+    } else if (value is bool) {
+      firebaseValue = value; // Support direct boolean saving for the notification switch
     } else {
-      user = Usermodel(
-          DarkMode: DarkLight.Light,
-          DistanceUnit: DistanceSpeedUnit.nauticalMilesKnots,
-          Altitude: AltitudeUnit.feet,
-          Pressure: PressureUnit.hpa,
-          Temperature: TemperatureUnit.celsius,
-      );
+      try {
+        firebaseValue = value.name;
+      } catch (e) {
+        firebaseValue = value.toString();
+      }
     }
 
-    print("This is the key");
-    print(key);
-
-    switch (key) {
-      case 'darkMode':
-        user.DarkMode = value ? DarkLight.Dark : DarkLight.Light;
-        break;
-        case 'DistanceUnit':
-          user.DistanceUnit = value;
-          break;
-        case 'Altitude':
-          user.Altitude = value;
-          break;
-        case 'Pressure':
-          user.Pressure = value;
-          break;
-        case 'Temperature':
-          user.Temperature = value;
-          break;
-    }
-    await fs.setUserData(user.toMap());
+    final fs = Firebaseservice();
+    print('3. FORMATTED DATA: Ready to send -> Key: $firebaseKey | Value: $firebaseValue');
+    await fs.updateUserPreference(currentUser.uid, firebaseKey, firebaseValue);
   }
 
-
   Widget _buildProfileSection(User? user, ThemeData theme, AviationColors aviationColors, Color textColor, Color secondaryTextColor, Color containerColor, Color borderColor) {
-    if (user == null) {
+    if (user == null || user.isAnonymous) {
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(

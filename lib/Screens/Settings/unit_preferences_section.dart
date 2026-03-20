@@ -8,8 +8,11 @@ class UnitPreferencesSection extends StatelessWidget {
   final Color containerColor;
   final Color borderColor;
   final bool isDark;
+  final String? distanceUnit;
+  final String? altitudeUnit;
+  final String? pressureUnit;
+  final String? temperatureUnit;
   final Function(String key, dynamic value) onUnitChange;
-
 
   const UnitPreferencesSection({
     super.key,
@@ -18,8 +21,32 @@ class UnitPreferencesSection extends StatelessWidget {
     required this.containerColor,
     required this.borderColor,
     required this.isDark,
+    this.distanceUnit,
+    this.altitudeUnit,
+    this.pressureUnit,
+    this.temperatureUnit,
     required this.onUnitChange
   });
+
+  String _formatString(String? val) {
+    if (val == null) return "";
+    
+    final cleanVal = val.split('.').last;
+
+    switch (cleanVal) {
+      case 'nauticalMilesKnots': return "NM & kt";
+      case 'kilometersKph': return "km & km/h";
+      case 'milesMph': return "mi & mph";
+      case 'feet': return "Feet";
+      case 'meters': return "Meters";
+      case 'inHg': return "inHg";
+      case 'hPa': return "hPa";
+      case 'hpa': return "hPa";
+      case 'celsius': return "Celsius (°C)";
+      case 'fahrenheit': return "Fahrenheit (°F)";
+      default: return cleanVal;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +79,7 @@ class UnitPreferencesSection extends StatelessWidget {
                     context: context,
                     icon: Icons.speed,
                     title: "Distance & Speed",
-                    value: _getDistSpeedLabel(units.distanceSpeedUnit),
+                    value: distanceUnit != null ? _formatString(distanceUnit) : _getDistSpeedLabel(units.distanceSpeedUnit),
                     onTap: () => _showDistSpeedPicker(context, units),
                   ),
                   Divider(color: borderColor, height: 1, indent: 50),
@@ -60,7 +87,7 @@ class UnitPreferencesSection extends StatelessWidget {
                     context: context,
                     icon: Icons.height,
                     title: "Altitude",
-                    value: _getAltitudeLabel(units.altitudeUnit),
+                    value: altitudeUnit != null ? _formatString(altitudeUnit) : _getAltitudeLabel(units.altitudeUnit),
                     onTap: () => _showAltitudePicker(context, units),
                   ),
                   Divider(color: borderColor, height: 1, indent: 50),
@@ -68,7 +95,7 @@ class UnitPreferencesSection extends StatelessWidget {
                     context: context,
                     icon: Icons.compress,
                     title: "Pressure",
-                    value: _getPressureLabel(units.pressureUnit),
+                    value: pressureUnit != null ? _formatString(pressureUnit) : _getPressureLabel(units.pressureUnit),
                     onTap: () => _showPressurePicker(context, units),
                   ),
                   Divider(color: borderColor, height: 1, indent: 50),
@@ -76,7 +103,7 @@ class UnitPreferencesSection extends StatelessWidget {
                     context: context,
                     icon: Icons.thermostat,
                     title: "Temperature",
-                    value: _getTemperatureLabel(units.temperatureUnit),
+                    value: temperatureUnit != null ? _formatString(temperatureUnit) : _getTemperatureLabel(units.temperatureUnit),
                     onTap: () => _showTemperaturePicker(context, units),
                   ),
                 ],

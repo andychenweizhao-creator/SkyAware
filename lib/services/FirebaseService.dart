@@ -15,4 +15,19 @@ class Firebaseservice {
     final doc = await users.doc(uid).get();
     return doc.data() as Map<String, dynamic>?;
   }
+
+  // Updates a single preference inside the nested 'preferences' map
+  Future<void> updateUserPreference(String userId, String key, dynamic value) async {
+    try {
+      print('🚀 FIREBASE ATTEMPT: Saving $key = $value for user $userId');
+      await users.doc(userId).set({
+        'preferences': {
+          key: value,
+        }
+      }, SetOptions(merge: true));
+      print('✅ FIREBASE SUCCESS: Successfully updated $key to $value');
+    } catch (e) {
+      print('❌ FIREBASE ERROR: Failed to update preference: $e');
+    }
+  }
 }

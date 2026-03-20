@@ -1287,7 +1287,7 @@ class _DashBoardState extends State<DashBoard> {
       });
 
       // 3. Extract the result we sent back from the Node.js backend
-      return result.data['result'] as String;
+      return (result.data['result'] ?? result.data['response']) as String;
 
     } on FirebaseFunctionsException catch (e) {
       // Catch specific Firebase backend errors (like our usage cap or auth errors)

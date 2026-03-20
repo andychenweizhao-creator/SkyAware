@@ -68,6 +68,20 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     }
   }
 
+  void _onSuccessfulLogin() {
+    if (mounted) {
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context);
+      } else {
+        // We are at the root, main.dart's StreamBuilder will automatically
+        // replace us with Navigationbar, but we can also pushReplacement to be safe.
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const Navigationbar()),
+        );
+      }
+    }
+  }
+
   Future<void> _createAccount() async {
     if (!_formKey.currentState!.validate()) return;
     
@@ -89,11 +103,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
         await FirebaseAuth.instance.currentUser!.updateDisplayName(name);
       }
       
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const Navigationbar()),
-        );
-      }
+      _onSuccessfulLogin();
     } on FirebaseAuthException catch (e) {
       setState(() {
         _errorMessage = e.message;
@@ -124,11 +134,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
 
     try {
       await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const Navigationbar()),
-        );
-      }
+      _onSuccessfulLogin();
     } on FirebaseAuthException catch (e) {
       setState(() {
         _errorMessage = e.message;
@@ -153,11 +159,9 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     });
 
     try {
-      final user = await auth.signInWithGoogle();
-      if (user != null && mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const Navigationbar()),
-        );
+      final user = await auth.signInWithGoogleAndSavePrefs();
+      if (user != null) {
+        _onSuccessfulLogin();
       }
     } catch (e) {
       setState(() {
@@ -180,10 +184,8 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
 
     try {
       final user = await auth.signInWithApple();
-      if (user != null && mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const Navigationbar()),
-        );
+      if (user != null) {
+        _onSuccessfulLogin();
       }
     } catch (e) {
       setState(() {
@@ -592,14 +594,24 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                onTap: () {
+                onTap: () async {
                   if (Navigator.canPop(context)) {
                      Navigator.pop(context);
                   } else {
-                     if (Platform.isAndroid) {
-                        SystemNavigator.pop();
-                     } else if (Platform.isIOS) {
-                        exit(0);
+                     try {
+                        // User wants to return to the app as a guest
+                        await FirebaseAuth.instance.signInAnonymously();
+                        if (mounted) {
+                           Navigator.of(context).pushReplacement(
+                              MaterialPageRoute(builder: (context) => const Navigationbar(initialIndex: 3)),
+                           );
+                        }
+                     } catch (e) {
+                        if (Platform.isAndroid) {
+                           SystemNavigator.pop();
+                        } else if (Platform.isIOS) {
+                           exit(0);
+                        }
                      }
                   }
                 },

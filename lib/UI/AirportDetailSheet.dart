@@ -10,13 +10,12 @@ class AirportDetailSheet extends StatefulWidget {
   final String icao;
   late final HttpsCallable aiCallable;
 
-
   AirportDetailSheet({
     super.key,
     required this.icao,
-  }){
+  }) {
     aiCallable = FirebaseFunctions.instance.httpsCallable('askGemini');
-}
+  }
 
   @override
   State<AirportDetailSheet> createState() => _AirportDetailSheetState();
@@ -46,14 +45,12 @@ class _AirportDetailSheetState extends State<AirportDetailSheet> {
       
       Map<String, dynamic>? analysis;
       // 2. Analyze with AI if model exists
-      if (widget.aiCallable != null) {
-        try {
-          analysis = await WeatherService.analyzeSafety(metar, widget.aiCallable!);
-        } catch (e) {
-          debugPrint("AI Analysis failed: $e");
-          // Continue without AI data
-          analysis = {"summary": "Co-Pilot offline.", "score": null};
-        }
+      try {
+        analysis = await WeatherService.analyzeSafety(metar, widget.aiCallable);
+      } catch (e) {
+        debugPrint("AI Analysis failed: $e");
+        // Surface the actual error to the UI for debugging
+        analysis = {"summary": "Co-Pilot Error: $e", "score": null};
       }
 
       if (mounted) {

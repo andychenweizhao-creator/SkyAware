@@ -47,7 +47,7 @@ dependencies:
   url_launcher: ^6.2.4
 
   firebase_core: ^4.4.0
-  firebase_auth: ^6.1.4
+  firebase_auth: ^6.2.0
   cloud_firestore: ^6.1.2
   firebase_storage: ^13.0.6
   image_picker: ^1.1.2
@@ -72,6 +72,7 @@ dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   cloud_functions: ^6.0.7
+  firebase_app_check: ^0.4.1+5
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

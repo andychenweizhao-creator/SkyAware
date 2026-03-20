@@ -110,7 +110,7 @@ class WeatherService {
       }
 
       // Extract the text using the 'result' key we defined in the index.js file
-      final String? text = response.data['result'] as String?;
+      final String? text = (response.data['result'] ?? response.data['response']) as String?;
 
       if (text == null) {
         throw Exception("AI returned empty response");

@@ -5,18 +5,43 @@ import 'dart:io';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
 import 'UI/theme_controller.dart';
 import 'services/unit_settings_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'Screens/Login/login_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   if (Platform.isIOS) {
     WebViewPlatform.instance = WebKitWebViewPlatform();
   }
+  
+  // 1. Initialize Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // 2. Activate App Check
+  await FirebaseAppCheck.instance.activate(
+    // Uses the debug provider so you can test on emulators/local devices safely.
+    // Note: For production releases, you will change this to AndroidProvider.playIntegrity
+    androidProvider: AndroidProvider.debug, 
+    appleProvider: AppleProvider.debug,
+  );
+
+  // 3. Sign in anonymously so the Cloud Function has a UID for your usage cap!
+  try {
+    if (FirebaseAuth.instance.currentUser == null) {
+      await FirebaseAuth.instance.signInAnonymously();
+      print("Signed in automatically!");
+    }
+  } catch (e) {
+    print("Auth error: $e");
+  }
+
   runApp(
     MultiProvider(
       providers: [
@@ -28,8 +53,22 @@ void main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late final Stream<User?> _authStream;
+
+  @override
+  void initState() {
+    super.initState();
+    // Cache the stream so it doesn't get recreated on every theme change rebuild
+    _authStream = FirebaseAuth.instance.authStateChanges();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -87,7 +126,24 @@ class MyApp extends StatelessWidget {
       ),
       themeMode: themeController.themeMode,
       debugShowCheckedModeBanner: false,
-      home: const Navigationbar(),
+      home: StreamBuilder<User?>(
+        stream: _authStream,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: Center(
+                child: CircularProgressIndicator(),
+              ),
+            );
+          }
+          
+          if (snapshot.hasData && snapshot.data != null) {
+            return const Navigationbar();
+          } else {
+            return const LoginPage();
+          }
+        },
+      ),
     );
   }
 }

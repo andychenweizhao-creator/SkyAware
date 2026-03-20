@@ -400,7 +400,7 @@ class _HomePageState extends State<HomePage> {
       if (!mounted || requestId != _aiRequestId) return;
 
       // Extract text from the backend response
-      final text = response.data['result'] as String?;
+      final text = (response.data['result'] ?? response.data['response']) as String?;
       if (text == null) return;
 
       // Robust Regex Parsing
@@ -425,11 +425,18 @@ class _HomePageState extends State<HomePage> {
         setState(() => _aiInsight = text);
       }
 
+    } on FirebaseFunctionsException catch (e) {
+      debugPrint("Firebase Functions Exception: ${e.code} - ${e.message} - ${e.details}");
+      if (mounted && requestId == _aiRequestId) {
+        setState(() {
+          _aiInsight = "Firebase Error [${e.code}]: ${e.message}\nDetails: ${e.details}";
+        });
+      }
     } catch (e) {
       debugPrint("Firebase Function Error: $e");
       if (mounted && requestId == _aiRequestId) {
         setState(() {
-          _aiInsight = "Co-Pilot offline. Using fallback data.";
+          _aiInsight = "Co-Pilot offline. Error: $e";
         });
       }
     }

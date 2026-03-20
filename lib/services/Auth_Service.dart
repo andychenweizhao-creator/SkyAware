@@ -7,6 +7,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import '../models/UserModel.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -35,11 +36,13 @@ class AuthService {
           'photoURL': user.photoURL ?? '',
           'createdAt': FieldValue.serverTimestamp(),
           'lastLogin': FieldValue.serverTimestamp(),
-          // Default preferences
           'preferences': {
             'notificationsEnabled': true,
-            'isDarkMode': false,
-            'measurementUnit': 'metric', // metric vs imperial
+            'DarkMode': DarkLight.Light.name,
+            'DistanceUnit': DistanceSpeedUnit.nauticalMilesKnots.name,
+            'Altitude': AltitudeUnit.feet.name,
+            'Pressure': PressureUnit.hpa.name,
+            'Temperature': TemperatureUnit.celsius.name,
           },
         });
       } else {
@@ -66,11 +69,6 @@ class AuthService {
 
       // Upload task
       final UploadTask uploadTask = ref.putFile(image);
-
-      // Optional: Monitor progress
-      // uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-      //   print('Progress: ${(snapshot.bytesTransferred / snapshot.totalBytes) * 100} %');
-      // });
 
       await uploadTask;
       final url = await ref.getDownloadURL();
@@ -114,14 +112,40 @@ class AuthService {
       );
       final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
 
-
-
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
 
       // Note: accessToken is no longer available in GoogleSignInAuthentication in v7
       // We rely on idToken.
       final AuthCredential credentials = GoogleAuthProvider.credential(
         accessToken: null, 
+        idToken: googleAuth.idToken,
+      );
+
+      final UserCredential result = await _auth.signInWithCredential(credentials);
+
+      if (result.user != null) {
+        await _saveUserToFirestore(result.user!);
+      }
+
+      return result.user;
+    } catch (e) {
+      print("Error signing in with Google: $e");
+      return null;
+    }
+  }
+
+  // Sign In with Google and save preferences with safe fallback
+  Future<User?> signInWithGoogleAndSavePrefs() async {
+    try {
+      await _googleSignIn.initialize(
+        serverClientId: '876460230034-runln6anedq3uh57adigi4121c88g3u0.apps.googleusercontent.com',
+      );
+      
+      final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final AuthCredential credentials = GoogleAuthProvider.credential(
+        accessToken: null,
         idToken: googleAuth.idToken,
       );
 
@@ -216,8 +240,11 @@ class AuthService {
             'lastLogin': FieldValue.serverTimestamp(),
             'preferences': {
               'notificationsEnabled': true,
-              'isDarkMode': false,
-              'measurementUnit': 'metric',
+              'DarkMode': DarkLight.Light.name,
+              'DistanceUnit': DistanceSpeedUnit.nauticalMilesKnots.name,
+              'Altitude': AltitudeUnit.feet.name,
+              'Pressure': PressureUnit.hpa.name,
+              'Temperature': TemperatureUnit.celsius.name,
             },
           });
         } catch (e) {
