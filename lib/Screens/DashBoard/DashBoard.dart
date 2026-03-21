@@ -11,6 +11,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:xml/xml.dart';
 import 'package:geolocator/geolocator.dart'; 
 
@@ -25,6 +27,7 @@ import '../../UI/AirportDetailSheet.dart';
 import '../../UI/AirportStatusPopup.dart'; 
 import '../../services/airport_database_service.dart';
 import '../../services/weather_service.dart'; 
+import '../../services/FirebaseService.dart';
 import '../../main.dart';
 
 enum AppMode { preflight, inFlight }
@@ -55,6 +58,8 @@ class _DashBoardState extends State<DashBoard> {
   final FocusNode _focusNode = FocusNode();
   AppMode _currentMode = AppMode.preflight;
   Position? _currentPosition; 
+
+  User? get _currentUser => FirebaseAuth.instance.currentUser;
 
   // Terrain Analysis
   bool _showTerrainAnalysis = false;
@@ -890,6 +895,293 @@ class _DashBoardState extends State<DashBoard> {
     return _getVisibleFeatures().map((f) => f.polygon).toList();
   }
 
+  void _onImportButtonPressed() {
+    if (_currentUser == null || _currentUser!.isAnonymous) {
+      // Not logged in: go straight to file picker
+      _importGarminRoute();
+    } else {
+      // Logged in: show choices
+      _showRouteImportOptionsBottomSheet();
+    }
+  }
+
+  void _showRouteImportOptionsBottomSheet() {
+    final theme = Theme.of(context);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface.withOpacity(0.95),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border(top: BorderSide(color: theme.colorScheme.onSurface.withOpacity(0.2))),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.withOpacity(0.5), borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 24),
+            ListTile(
+              leading: const Icon(Icons.upload_file, color: Colors.blueAccent, size: 28),
+              title: Text("Upload New Route", style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold)),
+              subtitle: Text("Import .fpl, .gpx, or .xml files", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _importGarminRoute();
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.history, color: Colors.purpleAccent, size: 28),
+              title: Text("Load Saved Route", style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold)),
+              subtitle: Text("Select a route from your history", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), fontSize: 12)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showSavedRoutesSheet();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSavedRoutesSheet() {
+    final theme = Theme.of(context);
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        bool isEditMode = false;
+        Set<String> selectedDocs = {};
+
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.7,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface.withOpacity(0.95),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                border: Border(top: BorderSide(color: theme.colorScheme.onSurface.withOpacity(0.2))),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 12),
+                  Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.withOpacity(0.5), borderRadius: BorderRadius.circular(2))),
+                  
+                  // Header Row with Edit/Cancel Button
+                  Padding(
+                    padding: const EdgeInsets.only(left: 20, right: 8, top: 16, bottom: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.cloud_done, color: theme.primaryColor),
+                            const SizedBox(width: 12),
+                            Text(isEditMode ? "${selectedDocs.length} Selected" : "Saved Routes", 
+                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
+                          ],
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setModalState(() {
+                              isEditMode = !isEditMode;
+                              if (!isEditMode) selectedDocs.clear(); // Clear on cancel
+                            });
+                          },
+                          child: Text(isEditMode ? "Cancel" : "Edit", style: TextStyle(color: theme.primaryColor, fontWeight: FontWeight.bold)),
+                        )
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  
+                  // Main List
+                  Expanded(
+                    child: StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(_currentUser!.uid)
+                          .collection('imported_routes')
+                          .orderBy('imported_at', descending: true)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return Center(child: CircularProgressIndicator(color: theme.primaryColor));
+                        }
+                        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                          return Center(
+                            child: Text("No saved routes found.", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5))),
+                          );
+                        }
+
+                        final docs = snapshot.data!.docs;
+
+                        return Column(
+                          children: [
+                            // Select All Row (Only in Edit Mode)
+                            if (isEditMode)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                child: Row(
+                                  children: [
+                                    Checkbox(
+                                      value: selectedDocs.length == docs.length,
+                                      activeColor: theme.primaryColor,
+                                      onChanged: (bool? checked) {
+                                        setModalState(() {
+                                          if (checked == true) {
+                                            selectedDocs = docs.map((d) => d.id).toSet();
+                                          } else {
+                                            selectedDocs.clear();
+                                          }
+                                        });
+                                      },
+                                    ),
+                                    Text("Select All", style: TextStyle(color: theme.colorScheme.onSurface)),
+                                  ],
+                                ),
+                              ),
+
+                            // The List of Routes
+                            Expanded(
+                              child: ListView.separated(
+                                padding: const EdgeInsets.symmetric(vertical: 0),
+                                itemCount: docs.length,
+                                separatorBuilder: (context, index) => const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final doc = docs[index];
+                                  final data = doc.data() as Map<String, dynamic>;
+                                  final origin = data['origin'] ?? "?";
+                                  final dest = data['destination'] ?? "?";
+                                  final routeStr = data['route_string'] ?? "Unknown";
+                                  final isSelected = selectedDocs.contains(doc.id);
+
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+                                    leading: isEditMode 
+                                      ? Checkbox(
+                                          value: isSelected,
+                                          activeColor: theme.primaryColor,
+                                          onChanged: (bool? val) {
+                                            setModalState(() {
+                                              if (val == true) {
+                                                selectedDocs.add(doc.id);
+                                              } else {
+                                                selectedDocs.remove(doc.id);
+                                              }
+                                            });
+                                          },
+                                        )
+                                      : null,
+                                    title: Text("$origin ➔ $dest", style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold, fontSize: 16)),
+                                    subtitle: Text(routeStr, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6))),
+                                    trailing: isEditMode ? null : Icon(Icons.download, color: theme.colorScheme.onSurface.withOpacity(0.3)),
+                                    onTap: () {
+                                      if (isEditMode) {
+                                        setModalState(() {
+                                          if (isSelected) {
+                                            selectedDocs.remove(doc.id);
+                                          } else {
+                                            selectedDocs.add(doc.id);
+                                          }
+                                        });
+                                      } else {
+                                        Navigator.pop(ctx);
+                                        _loadSavedRouteFromData(data['waypoints']);
+                                      }
+                                    },
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  
+                  // Bottom Delete Button (Only in Edit Mode)
+                  if (isEditMode)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        border: Border(top: BorderSide(color: theme.colorScheme.onSurface.withOpacity(0.1))),
+                      ),
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent.withOpacity(0.2),
+                          foregroundColor: Colors.redAccent,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          disabledBackgroundColor: Colors.grey.withOpacity(0.1),
+                          disabledForegroundColor: Colors.grey,
+                        ),
+                        icon: const Icon(Icons.delete),
+                        label: Text("Delete ${selectedDocs.length} Route${selectedDocs.length == 1 ? '' : 's'}"),
+                        onPressed: selectedDocs.isEmpty ? null : () async {
+                          // Call Firebase Service to delete
+                          await Firebaseservice().deleteSavedRoutes(selectedDocs.toList());
+                          setModalState(() {
+                            selectedDocs.clear();
+                            isEditMode = false; // Exit edit mode after delete
+                          });
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }
+        );
+      },
+    );
+  }
+
+  void _loadSavedRouteFromData(dynamic waypointsData) {
+    if (waypointsData is! List) return;
+
+    try {
+      List<RoutePoint> parsedPoints = [];
+      for (var wp in waypointsData) {
+        final lat = (wp['lat'] as num).toDouble();
+        final lon = (wp['lon'] as num).toDouble();
+        final id = wp['id'] as String;
+        final type = wp['type'] as String;
+
+        parsedPoints.add(RoutePoint(id: id, point: LatLng(lat, lon), type: type, name: id));
+      }
+
+      setState(() {
+        _routePoints = parsedPoints;
+      });
+
+      if (parsedPoints.isNotEmpty) {
+        final bounds = LatLngBounds.fromPoints(parsedPoints.map((p) => p.point).toList());
+        _mapController.fitCamera(
+          CameraFit.bounds(
+            bounds: bounds,
+            padding: const EdgeInsets.all(50.0),
+          ),
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Loaded saved route with ${parsedPoints.length} waypoints.')),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error parsing saved route: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to load saved route data.'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   Future<void> _importGarminRoute() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -977,6 +1269,26 @@ class _DashBoardState extends State<DashBoard> {
           padding: const EdgeInsets.all(50.0),
         ),
       );
+
+      // --- NEW: Extract Full Route Data and Save to Firebase ---
+      try {
+        final origin = points.first.id;
+        final destination = points.last.id;
+        final routeString = points.map((p) => p.id).join(' ');
+
+        // Serialize the full waypoint data
+        final List<Map<String, dynamic>> serializedWaypoints = points.map((p) => {
+          'id': p.id,
+          'lat': p.point.latitude,
+          'lon': p.point.longitude,
+          'type': p.type,
+        }).toList();
+
+        Firebaseservice().saveImportedRoute(origin, destination, routeString, serializedWaypoints);
+      } catch (e) {
+        debugPrint("Error extracting route data for Firebase: $e");
+      }
+      // ---------------------------------------------------------
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1131,7 +1443,7 @@ class _DashBoardState extends State<DashBoard> {
               left: 16,
               bottom: 100 + safeAreaBottomPadding,
               child: _GlassImportButton(
-                onPressed: _importGarminRoute,
+                onPressed: _onImportButtonPressed,
               ),
             ),
 
@@ -1742,5 +2054,3 @@ class _GlassImportButton extends StatelessWidget {
     );
   }
 }
-
-

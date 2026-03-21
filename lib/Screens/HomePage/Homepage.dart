@@ -9,12 +9,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../UI/AppAnimations.dart';
 import '../../services/unit_settings_service.dart';
 import '../../services/weather_service.dart'; // Added WeatherService
+import '../../services/FirebaseService.dart';
 import '../../main.dart';
 
 class HomePage extends StatefulWidget {
@@ -25,6 +27,9 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  User? _currentUser;
+  StreamSubscription<User?>? _authSubscription;
+
   // State
   bool _isLoading = false;
   bool _hasSearched = false; // Tracks Cold Start state
@@ -38,6 +43,10 @@ class _HomePageState extends State<HomePage> {
 
   String _currentAirportCode = "";
   late final TextEditingController _searchController;
+  late final FocusNode _searchFocusNode;
+
+  bool _isSearchEditMode = false;
+  Set<String> _selectedSearches = {};
 
   // Clock State
   Timer? _clockTimer;
@@ -70,6 +79,23 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _searchController = TextEditingController();
+    _searchFocusNode = FocusNode();
+    _searchFocusNode.addListener(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+
+    // Initialize synchronously before listening to changes
+    _currentUser = FirebaseAuth.instance.currentUser;
+
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((User? user) {
+      if (mounted) {
+        setState(() {
+          _currentUser = user;
+        });
+      }
+    });
 
     // Start Real-time Clock
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -106,9 +132,11 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _clockTimer?.cancel();
     _weatherTimer?.cancel();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -312,6 +340,9 @@ class _HomePageState extends State<HomePage> {
               _isLoading = false;
             });
 
+            // Save the valid airport search to Firebase
+            Firebaseservice().saveAirportSearch(_currentAirportCode);
+
             // Trigger AI Analysis
             final int requestId = ++_aiRequestId;
             _analyzeWeatherWithGemini(properties, requestId);
@@ -513,6 +544,207 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Widget _buildRecentSearches(ThemeData theme, bool isDark) {
+    if (!_searchFocusNode.hasFocus) {
+      // Reset edit mode silently if they click away from the search bar
+      _isSearchEditMode = false;
+      _selectedSearches.clear();
+      return const SizedBox.shrink();
+    }
+
+    if (_currentUser == null || _currentUser!.isAnonymous) {
+      return const SizedBox.shrink(); 
+    }
+
+    return StreamBuilder<DocumentSnapshot>(
+      key: ValueKey(_currentUser!.uid),
+      stream: FirebaseFirestore.instance.collection('users').doc(_currentUser!.uid).snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || !snapshot.data!.exists) return const SizedBox.shrink();
+        
+        final data = snapshot.data!.data() as Map<String, dynamic>?;
+        if (data == null || !data.containsKey('recent_airports')) return const SizedBox.shrink();
+
+        List<dynamic> recents = data['recent_airports'];
+        if (recents.isEmpty) return const SizedBox.shrink();
+
+        final displayList = recents.reversed.toList();
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 8.0),
+          child: Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF2C2C2C) : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(isDark ? 0.3 : 0.05), blurRadius: 10, offset: const Offset(0, 4))
+              ],
+              border: Border.all(color: isDark ? Colors.white.withOpacity(0.1) : Colors.grey.withOpacity(0.2)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header (Only shows in Edit Mode)
+                if (_isSearchEditMode)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 16, right: 8, top: 8, bottom: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: _selectedSearches.length == displayList.length,
+                              activeColor: theme.primaryColor,
+                              onChanged: (val) {
+                                setState(() {
+                                  if (val == true) {
+                                    _selectedSearches = displayList.map((e) => e.toString()).toSet();
+                                  } else {
+                                    _selectedSearches.clear();
+                                  }
+                                });
+                              },
+                            ),
+                            Text("Select All", style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _isSearchEditMode = false;
+                              _selectedSearches.clear();
+                            });
+                          },
+                          child: Text("Cancel", style: TextStyle(color: theme.primaryColor)),
+                        )
+                      ],
+                    ),
+                  ),
+
+                // Main List
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: _isSearchEditMode ? 168 : 112),
+                  child: ListView.builder(
+                    padding: EdgeInsets.zero,
+                    shrinkWrap: true,
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: displayList.length,
+                    itemBuilder: (context, index) {
+                      final icao = displayList[index].toString();
+                      final isSelected = _selectedSearches.contains(icao);
+
+                      return Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () {
+                            if (_isSearchEditMode) {
+                              setState(() {
+                                if (isSelected) _selectedSearches.remove(icao);
+                                else _selectedSearches.add(icao);
+                              });
+                            } else {
+                              FocusManager.instance.primaryFocus?.unfocus();
+                              _searchController.text = icao;
+                              setState(() => _currentAirportCode = icao);
+                              _fetchMetarData();
+                            }
+                          },
+                          child: SizedBox(
+                            height: 56,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: Row(
+                                children: [
+                                  if (_isSearchEditMode)
+                                    Checkbox(
+                                      value: isSelected,
+                                      activeColor: theme.primaryColor,
+                                      onChanged: (val) {
+                                        setState(() {
+                                          if (val == true) _selectedSearches.add(icao);
+                                          else _selectedSearches.remove(icao);
+                                        });
+                                      },
+                                    )
+                                  else
+                                    Icon(Icons.history, size: 20, color: theme.colorScheme.onSurface.withOpacity(0.5)),
+                                  
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Text(icao, style: TextStyle(fontSize: 16, color: theme.colorScheme.onSurface, fontWeight: FontWeight.w500)),
+                                  ),
+                                  
+                                  if (!_isSearchEditMode)
+                                    Icon(Icons.north_west, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.3)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                // Footer (Action Buttons)
+                const Divider(height: 1),
+                if (_isSearchEditMode)
+                  InkWell(
+                    onTap: _selectedSearches.isEmpty ? null : () async {
+                      await Firebaseservice().removeSelectedSearches(_selectedSearches.toList());
+                      setState(() {
+                        _selectedSearches.clear();
+                        _isSearchEditMode = false;
+                      });
+                    },
+                    child: Container(
+                      height: 48,
+                      alignment: Alignment.center,
+                      child: Text(
+                        "Delete Selected (${_selectedSearches.length})", 
+                        style: TextStyle(color: _selectedSearches.isEmpty ? Colors.grey : Colors.redAccent, fontWeight: FontWeight.bold)
+                      ),
+                    ),
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setState(() => _isSearchEditMode = true),
+                          child: Container(
+                            height: 48,
+                            alignment: Alignment.center,
+                            child: Text("Edit", style: TextStyle(color: theme.primaryColor, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ),
+                      Container(width: 1, height: 24, color: Colors.grey.withOpacity(0.3)),
+                      Expanded(
+                        child: InkWell(
+                          onTap: () async {
+                            await Firebaseservice().clearAllAirportSearches();
+                            FocusManager.instance.primaryFocus?.unfocus();
+                          },
+                          child: Container(
+                            height: 48,
+                            alignment: Alignment.center,
+                            child: const Text("Clear All", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -559,6 +791,10 @@ class _HomePageState extends State<HomePage> {
                         const SizedBox(height: 20),
                         // Search Bar
                         _buildAirportBar(theme, isDark),
+                        
+                        // Recent Searches
+                        _buildRecentSearches(theme, isDark),
+
                         // Airport Name below search
                         if (_hasSearched && _metarData != null)
                            Padding(
@@ -803,6 +1039,7 @@ class _HomePageState extends State<HomePage> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: TextField(
                 controller: _searchController,
+                focusNode: _searchFocusNode,
                 style: TextStyle(
                   color: theme.colorScheme.onSurface,
                   fontWeight: FontWeight.bold,
