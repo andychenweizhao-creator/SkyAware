@@ -2,8 +2,8 @@ import 'dart:ui';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:async';
-import 'package:flutter/foundation.dart'; // Added for compute
-import 'package:flutter/services.dart'; // Added for rootBundle
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -58,8 +58,7 @@ class _HomePageState extends State<HomePage> {
   int? _aiSafetyScore;
   int _aiRequestId = 0; // To handle out-of-order responses
 
-  // API Key for Gemini
-  // final String _apiKey = "AIzaSyBqqjz5thRK3Lt6xQcivugnHReGkbgK9rY";
+
 
   static const Duration _geminiTimeout = Duration(seconds: 25);
   static const Duration _geminiRetryDelay = Duration(milliseconds: 600);
