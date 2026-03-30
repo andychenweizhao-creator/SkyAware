@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'UI/NavigationBar.dart';
 import 'dart:io';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'firebase_options.dart';
@@ -14,10 +12,6 @@ import 'Screens/Login/login_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  if (Platform.isIOS) {
-    WebViewPlatform.instance = WebKitWebViewPlatform();
-  }
   
   // 1. Initialize Firebase
   await Firebase.initializeApp(
