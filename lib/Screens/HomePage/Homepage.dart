@@ -122,6 +122,17 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 12) {
+      return 'Good Morning';
+    } else if (hour >= 12 && hour < 17) {
+      return 'Good Afternoon';
+    } else {
+      return 'Good Evening';
+    }
+  }
+
   // --- Nearest Airport Algorithm (Background) ---
 
   Future<void> _updateNearestAirport() async {
@@ -898,7 +909,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                   
                 Text(
-                  "Good Morning, Captain",
+                  "${_getGreeting()}, Captain",
                   style: TextStyle(
                     fontSize: 16,
                     color: theme.colorScheme.onSurface.withOpacity(0.7),

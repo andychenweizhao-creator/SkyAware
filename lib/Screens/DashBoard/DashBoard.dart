@@ -1946,6 +1946,15 @@ class _CollapsibleActionFabState extends State<CollapsibleActionFab> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final aviationColors = theme.extension<AviationColors>();
+
+    final defaultBgColor = isDark ? Colors.black : Colors.white;
+    final bgColor = (aviationColors?.mapButtonBg ?? defaultBgColor).withOpacity(isDark ? 0.7 : 0.9);
+    
+    final iconColor = aviationColors?.mapButtonIcon ?? theme.colorScheme.primary;
+
     return GestureDetector(
       onTap: _onTap,
       child: AnimatedContainer(
@@ -1954,17 +1963,20 @@ class _CollapsibleActionFabState extends State<CollapsibleActionFab> {
         width: _isExpanded ? 220 : 64, // Increased width to fit text
         height: 56,
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.4),
+          color: bgColor,
           borderRadius: BorderRadius.circular(30),
           border: Border.all(
-            color: _isExpanded ? Colors.greenAccent : Colors.white.withOpacity(0.2),
+            color: _isExpanded ? iconColor : theme.dividerColor.withOpacity(0.2),
             width: 1.5,
           ),
           boxShadow: [
             BoxShadow(
-              color: _isExpanded ? Colors.greenAccent.withOpacity(0.2) : Colors.black.withOpacity(0.3),
-              blurRadius: 15,
-              spreadRadius: 2,
+              color: _isExpanded 
+                  ? iconColor.withOpacity(0.2) 
+                  : (isDark ? Colors.black.withOpacity(0.3) : Colors.grey.withOpacity(0.4)),
+              blurRadius: isDark ? 15 : 8,
+              spreadRadius: isDark ? 2 : 1,
+              offset: isDark ? Offset.zero : const Offset(0, 2),
             ),
           ],
         ),
@@ -1977,13 +1989,13 @@ class _CollapsibleActionFabState extends State<CollapsibleActionFab> {
               children: [
                 // --- Icon ---
                 // This container ensures the icon is always centered in its 56x56 space
-                const SizedBox(
+                SizedBox(
                   width: 56,
                   height: 56,
                   child: Center(
                     child: Icon(
                       Icons.flight_takeoff,
-                      color: Colors.greenAccent,
+                      color: iconColor,
                       size: 24,
                     ),
                   ),
@@ -1995,12 +2007,12 @@ class _CollapsibleActionFabState extends State<CollapsibleActionFab> {
                     duration: const Duration(milliseconds: 200),
                     opacity: _isExpanded ? 1.0 : 0.0, // Animate opacity
                     curve: Curves.easeOut,
-                    child: const Padding(
-                      padding: EdgeInsets.only(right: 16.0), // Padding for expanded text
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 16.0), // Padding for expanded text
                       child: Text(
                         "Enter In-Flight", // Updated Text
                         style: TextStyle(
-                          color: Colors.white,
+                          color: theme.colorScheme.onSurface,
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
                         ),

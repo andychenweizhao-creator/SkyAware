@@ -2324,19 +2324,22 @@ class _EmergencyLoadingDialogState extends State<_EmergencyLoadingDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textColor = theme.textTheme.bodyMedium?.color;
+
     return PopScope(
       canPop: false,
       child: AlertDialog(
-        backgroundColor: Colors.black87,
+        backgroundColor: theme.scaffoldBackgroundColor,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: Colors.redAccent, width: 2),
         ),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 32),
-            SizedBox(width: 8),
-            Text("Emergency Mode", style: TextStyle(color: Colors.white)),
+            const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 32),
+            const SizedBox(width: 8),
+            Text("Emergency Mode", style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
           ],
         ),
         content: Column(
@@ -2344,9 +2347,9 @@ class _EmergencyLoadingDialogState extends State<_EmergencyLoadingDialog> {
           children: [
             const CircularProgressIndicator(color: Colors.redAccent),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               "Analyzing Emergency Route...",
-              style: TextStyle(color: Colors.white70),
+              style: TextStyle(color: textColor?.withOpacity(0.7)),
             ),
             const SizedBox(height: 16),
             Text(

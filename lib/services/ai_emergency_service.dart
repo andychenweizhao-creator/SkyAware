@@ -76,6 +76,7 @@ RETURN JSON ONLY:
       );
       final response = await callable.call(<String, dynamic>{
         'prompt': prompt,
+        'isEmergency': true,
       }).timeout(_timeout);
 
       // Support both possible return keys based on backend configuration
