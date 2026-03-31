@@ -5,8 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:skyaware/UI/theme_controller.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-import '../../../UI/AppAnimations.dart';
-import '../../../UI/AirportDetailSheet.dart';
+
 
 // Consolidated RoutePoint class
 class RoutePoint {
