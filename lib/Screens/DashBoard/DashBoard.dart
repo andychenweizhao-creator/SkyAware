@@ -1518,6 +1518,7 @@ class _DashBoardState extends State<DashBoard> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
+        final theme = Theme.of(context);
         return DraggableScrollableSheet(
           initialChildSize: 0.4,
           maxChildSize: 0.9,
@@ -1528,9 +1529,9 @@ class _DashBoardState extends State<DashBoard> {
               builder: (context, snapshot) {
                 return Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0A1A2F).withOpacity(0.9),
+                    color: theme.scaffoldBackgroundColor.withOpacity(0.95),
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                    border: Border.all(color: Colors.white.withOpacity(0.2)),
+                    border: Border.all(color: theme.dividerColor.withOpacity(0.2)),
                   ),
                   child: ListView(
                     controller: scrollController,
@@ -1541,7 +1542,7 @@ class _DashBoardState extends State<DashBoard> {
                           width: 40,
                           height: 5,
                           decoration: BoxDecoration(
-                            color: Colors.grey[700],
+                            color: theme.dividerColor.withOpacity(0.5),
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
@@ -1549,27 +1550,42 @@ class _DashBoardState extends State<DashBoard> {
                       const SizedBox(height: 16),
                       Text(
                         'Co-Pilot Analysis',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.white),
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          color: theme.colorScheme.onSurface,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       if (snapshot.connectionState == ConnectionState.waiting)
-                        const Center(
+                        Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              CircularProgressIndicator(),
-                              SizedBox(height: 16),
+                              CircularProgressIndicator(
+                                color: theme.colorScheme.primary,
+                              ),
+                              const SizedBox(height: 16),
                               Text(
                                 "🤖 Co-Pilot is analyzing...",
-                                style: TextStyle(color: Colors.white70),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurface.withOpacity(0.7),
+                                ),
                               ),
                             ],
                           ),
                         ),
                       if (snapshot.hasError)
-                        Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                        Text(
+                          'Error: ${snapshot.error}',
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
                       if (snapshot.hasData)
-                        Text(snapshot.data!, style: const TextStyle(color: Colors.white70, fontSize: 16)),
+                        Text(
+                          snapshot.data!,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurface.withOpacity(0.8),
+                            fontSize: 16,
+                          ),
+                        ),
                     ],
                   ),
                 );

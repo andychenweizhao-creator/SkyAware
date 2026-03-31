@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:latlong2/latlong.dart'; 
 import 'airport_database_service.dart';
 
 class AiEmergencyService {
-  static const Duration _timeout = Duration(seconds: 30);
+  static const Duration _timeout = Duration(seconds: 60); // Increased timeout to 60s for AI/Cloud Function cold starts
 
   /// Analyzes the situation and selects the best airport from the provided candidates.
   static Future<Map<String, dynamic>> calculateEmergencyRoute({
@@ -16,7 +16,6 @@ class AiEmergencyService {
     required String aircraftType,
     required String emergencyType,
     required List<Airport> candidates,
-    required GenerativeModel model,
   }) async {
     
     // 1. Build Candidate List String (Top 5 Only)
@@ -71,14 +70,23 @@ RETURN JSON ONLY:
 """;
 
     try {
-      final content = [Content.text(prompt)];
-      final response = await model.generateContent(content).timeout(_timeout);
+      final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable(
+        'askGemini',
+        options: HttpsCallableOptions(timeout: _timeout),
+      );
+      final response = await callable.call(<String, dynamic>{
+        'prompt': prompt,
+      }).timeout(_timeout);
 
-      if (response.text == null) {
+      // Support both possible return keys based on backend configuration
+      final responseData = response.data;
+      final responseText = responseData['result'] ?? responseData['response'];
+
+      if (responseText == null) {
         throw Exception("AI returned empty response");
       }
 
-      final result = _cleanAndParseJson(response.text!);
+      final result = _cleanAndParseJson(responseText.toString());
       
       // Safety Fallback & Coordinate Fix
       final selectedId = result['selected_airport_id']?.toString().toUpperCase();

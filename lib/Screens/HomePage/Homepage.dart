@@ -108,24 +108,7 @@ class _HomePageState extends State<HomePage> {
     // Fetch User GPS Location
     _fetchUserLocation();
 
-    // Initialize Gemini Model
-    // try {
-    //   if (_apiKey.isNotEmpty) {
-    //     _model = GenerativeModel(
-    //       model: 'gemini-3-pro-preview',
-    //       apiKey: _apiKey,
-    //       generationConfig: GenerationConfig(responseMimeType: 'application/json'),
-    //       safetySettings: [
-    //         HarmCategory.harassment,
-    //         HarmCategory.hateSpeech,
-    //         HarmCategory.sexuallyExplicit,
-    //         HarmCategory.dangerousContent,
-    //       ].map((category) => SafetySetting(category, HarmBlockThreshold.none)).toList(),
-    //     );
-    //   }
-    // } catch (e) {
-    //   debugPrint("Error initializing Gemini: $e");
-    // }
+
     _aiCallable = FirebaseFunctions.instance.httpsCallable('askGemini');
   }
 

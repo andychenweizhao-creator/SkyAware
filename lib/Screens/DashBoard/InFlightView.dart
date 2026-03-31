@@ -7,7 +7,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart' hide Path; // HIDE Path to avoid conflict with dart:ui.Path
 import 'package:geolocator/geolocator.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:provider/provider.dart';
 import 'package:skyaware/UI/theme_controller.dart';
 import 'Maps/maps.dart';
@@ -74,8 +74,6 @@ class InFlightView extends StatefulWidget {
 
 class _InFlightViewState extends State<InFlightView> with SingleTickerProviderStateMixin {
   final Map<String, List<WeatherFeature>> _activeLayers = {};
-  GenerativeModel? _model;
-  final String _kGeminiApiKey = 'AIzaSyB_nwHRCKO9RgAgOXTPfeL5o_UbL3GW3X4'; // IMPORTANT: REPLACE WITH YOUR KEY
   
   StreamSubscription<Position>? _positionStream;
   Position? _currentPosition;
@@ -112,17 +110,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   void initState() {
     super.initState();
     _activeRoutePoints = List.from(widget.routePoints); // Clone initial route
-
-    if (_kGeminiApiKey.isNotEmpty && _kGeminiApiKey != 'YOUR_GEMINI_API_KEY') {
-      try {
-        _model = GenerativeModel(
-          model: 'gemini-3-pro-preview',
-          apiKey: _kGeminiApiKey,
-        );
-      } catch (e) {
-        print("Gemini Init Error: $e");
-      }
-    }
     
     // Setup Flashing Animation
     _flashController = AnimationController(
@@ -579,11 +566,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   }
   
   Future<void> _startEmergencyFlow() async {
-    if (_model == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("AI Unavailable")));
-      return;
-    }
-
     String aircraftType = "Cessna 172S"; 
     String emergencyType = "Engine Failure"; 
     String customEmergencyText = "";
@@ -709,7 +691,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
         aircraftType: acType,
         emergencyType: emType,
         candidates: candidates,
-        model: _model!,
       );
 
       final coords = aiResult['coordinates'];
@@ -1273,6 +1254,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
+        final theme = Theme.of(context);
         return DraggableScrollableSheet(
           initialChildSize: 0.4,
           maxChildSize: 0.9,
@@ -1283,9 +1265,9 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
               builder: (context, snapshot) {
                 return Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0A1A2F).withOpacity(0.9),
+                    color: theme.scaffoldBackgroundColor.withOpacity(0.95),
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                    border: Border.all(color: Colors.white.withOpacity(0.2)),
+                    border: Border.all(color: theme.dividerColor.withOpacity(0.2)),
                   ),
                   child: ListView(
                     controller: scrollController,
@@ -1296,7 +1278,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
                           width: 40,
                           height: 5,
                           decoration: BoxDecoration(
-                            color: Colors.grey[700],
+                            color: theme.dividerColor.withOpacity(0.5),
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
@@ -1304,27 +1286,42 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
                       const SizedBox(height: 16),
                       Text(
                         'Co-Pilot Analysis',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.white),
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          color: theme.colorScheme.onSurface,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       if (snapshot.connectionState == ConnectionState.waiting)
-                        const Center(
+                        Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              CircularProgressIndicator(),
-                              SizedBox(height: 16),
+                              CircularProgressIndicator(
+                                color: theme.colorScheme.primary,
+                              ),
+                              const SizedBox(height: 16),
                               Text(
                                 "🤖 Co-Pilot is analyzing...",
-                                style: TextStyle(color: Colors.white70),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurface.withOpacity(0.7),
+                                ),
                               ),
                             ],
                           ),
                         ),
                       if (snapshot.hasError)
-                        Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                        Text(
+                          'Error: ${snapshot.error}',
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
                       if (snapshot.hasData)
-                        Text(snapshot.data!, style: const TextStyle(color: Colors.white70, fontSize: 16)),
+                        Text(
+                          snapshot.data!,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurface.withOpacity(0.8),
+                            fontSize: 16,
+                          ),
+                        ),
                     ],
                   ),
                 );
@@ -1337,10 +1334,6 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   }
 
   Future<String> _getAiSummary(List<WeatherFeature> features) async {
-    if (_model == null) {
-      return "AI model not initialized. Please add your Gemini API key.";
-    }
-
     final rawData = features.map((f) => f.rawProperties).toList();
     final jsonData = jsonEncode(rawData);
 
@@ -1348,9 +1341,133 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     You are a flight safety Co-Pilot. The user tapped a location with these weather hazards: $jsonData. Analyze the Severity, Cloud Tops/Bases, and give a tactical recommendation. Be concise.
     """;
 
-    final content = [Content.text(prompt)];
-    final response = await _model!.generateContent(content);
-    return response.text ?? "Could not generate a summary.";
+    try {
+      final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable(
+        'askGemini',
+        options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
+      );
+      final result = await callable.call(<String, dynamic>{
+        'prompt': prompt,
+      }).timeout(const Duration(seconds: 60));
+      return (result.data['result'] ?? result.data['response']) as String;
+    } on FirebaseFunctionsException catch (e) {
+      print('Cloud Function Error: ${e.code} - ${e.message}');
+      return "Co-Pilot Error: ${e.message}";
+    } catch (e) {
+      print('Unknown Error: $e');
+      return "Could not reach the Co-Pilot. Please check your connection.";
+    }
+  }
+
+  Future<void> _analyzeEmergencyWithGemini(Map<String, dynamic> data) async {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final theme = Theme.of(context);
+        return DraggableScrollableSheet(
+          initialChildSize: 0.4,
+          maxChildSize: 0.9,
+          minChildSize: 0.2,
+          builder: (BuildContext context, ScrollController scrollController) {
+            return FutureBuilder<String>(
+              future: _getAiEmergencySummary(data),
+              builder: (context, snapshot) {
+                return Container(
+                  decoration: BoxDecoration(
+                    color: theme.scaffoldBackgroundColor.withOpacity(0.95),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                    border: Border.all(color: theme.dividerColor.withOpacity(0.2)),
+                  ),
+                  child: ListView(
+                    controller: scrollController,
+                    padding: const EdgeInsets.all(20),
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: theme.dividerColor.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Co-Pilot Emergency Analysis',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (snapshot.connectionState == ConnectionState.waiting)
+                        Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              CircularProgressIndicator(
+                                color: theme.colorScheme.primary,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                "🤖 Co-Pilot is analyzing emergency...",
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurface.withOpacity(0.7),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (snapshot.hasError)
+                        Text(
+                          'Error: ${snapshot.error}',
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
+                      if (snapshot.hasData)
+                        Text(
+                          snapshot.data!,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurface.withOpacity(0.8),
+                            fontSize: 16,
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<String> _getAiEmergencySummary(Map<String, dynamic> data) async {
+    final jsonData = jsonEncode(data);
+
+    final prompt = """
+    You are a flight safety Co-Pilot. The pilot has declared an emergency with the following data: $jsonData. 
+    Analyze the situation, provide a critical assessment, and suggest any additional safety measures. Be concise.
+    """;
+
+    try {
+      final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable(
+        'askGemini',
+        options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
+      );
+      final result = await callable.call(<String, dynamic>{
+        'prompt': prompt,
+      }).timeout(const Duration(seconds: 60));
+      return (result.data['result'] ?? result.data['response']) as String;
+    } on FirebaseFunctionsException catch (e) {
+      print('Cloud Function Error: ${e.code} - ${e.message}');
+      return "Co-Pilot Error: ${e.message}";
+    } catch (e) {
+      print('Unknown Error: $e');
+      return "Could not reach the Co-Pilot. Please check your connection.";
+    }
   }
   
   // NEW HELPERS FOR MODERN UI
@@ -1932,6 +2049,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
               bottom: 0,
               child: EmergencyOverlay(
                 data: _emergencyData!,
+                onAskCoPilot: () => _analyzeEmergencyWithGemini(_emergencyData!),
                 onClose: () {
                   setState(() {
                     _isEmergencyMode = false;

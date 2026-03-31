@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 class EmergencyOverlay extends StatefulWidget {
   final Map<String, dynamic> data;
   final VoidCallback onClose;
+  final VoidCallback? onAskCoPilot;
 
   const EmergencyOverlay({
     super.key,
     required this.data,
     required this.onClose,
+    this.onAskCoPilot,
   });
 
   @override
@@ -208,24 +210,53 @@ class _EmergencyOverlayState extends State<EmergencyOverlay> {
               ),
               Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey[800],
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: Colors.white24),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 50,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey[800],
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white24),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: widget.onClose,
+                          child: const Text(
+                            "CANCEL EMERGENCY",
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                        ),
                       ),
                     ),
-                    onPressed: widget.onClose,
-                    child: const Text(
-                      "CANCEL EMERGENCY",
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ),
+                    if (widget.onAskCoPilot != null) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: SizedBox(
+                          height: 50,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue[800],
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Colors.blueAccent),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onPressed: widget.onAskCoPilot,
+                            icon: const Icon(Icons.support_agent, size: 20),
+                            label: const Text(
+                              "ASK CO-PILOT",
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],

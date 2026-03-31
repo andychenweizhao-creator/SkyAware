@@ -41,7 +41,7 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBfotAjULdTMl5dBzG2kXik2B8d9FEpfYs',
+    apiKey: '[GEMINI_API_KEY_REMOVED]',
     appId: '1:876460230034:web:4e112e943b6e7d5cb56d4b',
     messagingSenderId: '876460230034',
     projectId: 'skyaware-8b2e8',
@@ -55,22 +55,24 @@ class DefaultFirebaseOptions {
     appId: '1:876460230034:android:f1a8f1f0d7e7b270b56d4b',
     messagingSenderId: '876460230034',
     projectId: 'skyaware-8b2e8',
+    databaseURL: 'https://skyaware-8b2e8-default-rtdb.firebaseio.com',
     storageBucket: 'skyaware-8b2e8.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyBES_x7bCHL_1hy0iwElgOZNINMnZwaJ5c',
-    appId: '1:876460230034:ios:90530893369e3eeab56d4b',
+    appId: '1:876460230034:ios:9144443cd11c938db56d4b',
     messagingSenderId: '876460230034',
     projectId: 'skyaware-8b2e8',
+    databaseURL: 'https://skyaware-8b2e8-default-rtdb.firebaseio.com',
     storageBucket: 'skyaware-8b2e8.firebasestorage.app',
     androidClientId: '876460230034-485q4b3rvcf92e3ojar14hjcajieu2v7.apps.googleusercontent.com',
-    iosClientId: '876460230034-lth7av2d4l50ncdhqn62pjcfnli2gah6.apps.googleusercontent.com',
-    iosBundleId: 'com.example.skyaware',
+    iosClientId: '876460230034-sto5k06b1hv2nb67ai35lm2lk12dceuf.apps.googleusercontent.com',
+    iosBundleId: 'com.andy.skyaware',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyBES_x7bCHL_1hy0iwElgOZNINMnZwaJ5c',
+    apiKey: '[GEMINI_API_KEY_REMOVED]',
     appId: '1:876460230034:ios:90530893369e3eeab56d4b',
     messagingSenderId: '876460230034',
     projectId: 'skyaware-8b2e8',
@@ -81,7 +83,7 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyBfotAjULdTMl5dBzG2kXik2B8d9FEpfYs',
+    apiKey: '[GEMINI_API_KEY_REMOVED]',
     appId: '1:876460230034:web:fa90cfba91064c18b56d4b',
     messagingSenderId: '876460230034',
     projectId: 'skyaware-8b2e8',
