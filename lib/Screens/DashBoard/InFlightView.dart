@@ -667,8 +667,13 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
   Future<void> _processEmergency(String acType, String emType) async {
     if (_currentPosition == null) return;
     
+    // Show loading dialog with countdown
     if (mounted) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Analyzing Emergency Route...")));
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const _EmergencyLoadingDialog(),
+      );
     }
 
     try {
@@ -679,7 +684,10 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
       );
 
       if (candidates.isEmpty) {
-         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No airports found nearby!")));
+         if (mounted) {
+           Navigator.pop(context); // Close dialog
+           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("No airports found nearby!")));
+         }
          return;
       }
 
@@ -692,6 +700,10 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
         emergencyType: emType,
         candidates: candidates,
       );
+
+      if (mounted) {
+        Navigator.pop(context); // Close dialog
+      }
 
       final coords = aiResult['coordinates'];
       if (coords != null) {
@@ -744,6 +756,7 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     } catch (e) {
       debugPrint("Emergency Error: $e");
       if (mounted) {
+        Navigator.pop(context); // Close dialog
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to calculate emergency plan: $e")));
       }
     }
@@ -2274,5 +2287,75 @@ class _FlightInfoPanelState extends State<FlightInfoPanel> with SingleTickerProv
     final h = (minutes / 60).floor();
     final m = (minutes % 60).round();
     return "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}";
+  }
+}
+
+class _EmergencyLoadingDialog extends StatefulWidget {
+  const _EmergencyLoadingDialog({Key? key}) : super(key: key);
+
+  @override
+  State<_EmergencyLoadingDialog> createState() => _EmergencyLoadingDialogState();
+}
+
+class _EmergencyLoadingDialogState extends State<_EmergencyLoadingDialog> {
+  int _secondsLeft = 60;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() {
+        if (_secondsLeft > 0) {
+          _secondsLeft--;
+        } else {
+          _timer?.cancel();
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        backgroundColor: Colors.black87,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.redAccent, width: 2),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 32),
+            SizedBox(width: 8),
+            Text("Emergency Mode", style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: Colors.redAccent),
+            const SizedBox(height: 16),
+            const Text(
+              "Analyzing Emergency Route...",
+              style: TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "Timeout in $_secondsLeft seconds",
+              style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
