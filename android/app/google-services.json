@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "876460230034",
+    "firebase_url": "https://skyaware-8b2e8-default-rtdb.firebaseio.com",
+    "project_id": "skyaware-8b2e8",
+    "storage_bucket": "skyaware-8b2e8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:876460230034:android:f1a8f1f0d7e7b270b56d4b",
+        "android_client_info": {
+          "package_name": "com.andy.skyaware"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "876460230034-c1snpv5cesi6o6amva3icv352rhssfd7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.andy.skyaware",
+            "certificate_hash": "aab35632673b80448268072658f4f43ffc1cfbec"
+          }
+        },
+        {
+          "client_id": "876460230034-runln6anedq3uh57adigi4121c88g3u0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCwC3fF2osR7GtAuXR529-qDvnyt4NETu0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "876460230034-runln6anedq3uh57adigi4121c88g3u0.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "876460230034-lth7av2d4l50ncdhqn62pjcfnli2gah6.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.skyaware"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
