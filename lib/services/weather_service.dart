@@ -10,12 +10,25 @@ class WeatherService {
 
   /// Fetches METAR data for a specific ICAO code from aviationweather.gov
   static Future<Map<String, dynamic>> fetchMetar(String icao) async {
-    final uri = Uri.parse(
-      'https://aviationweather.gov/api/data/metar?ids=$icao&format=geojson&taf=false&hours=0&_=${DateTime.now().millisecondsSinceEpoch}',
+    final normalizedIcao = icao.trim().toUpperCase();
+    final uri = Uri.https(
+      'aviationweather.gov',
+      '/api/data/metar',
+      {
+        'ids': normalizedIcao,
+        'format': 'geojson',
+        'hours': '2',
+      },
     );
 
     try {
-      final response = await http.get(uri);
+      final response = await http.get(
+        uri,
+        headers: const {
+          'User-Agent': 'SkyAware/1.0',
+          'Accept': 'application/geo+json, application/json',
+        },
+      ).timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -44,15 +57,32 @@ class WeatherService {
   /// Fetches flight categories (VFR, IFR, etc) for a batch of airport ICAO codes.
   /// Returns a map { 'KLAX': 'VFR', ... }
   static Future<Map<String, String>> getFlightCategories(List<String> icaoCodes) async {
-    if (icaoCodes.isEmpty) return {};
+    final validCodes = icaoCodes
+        .map((code) => code.trim().toUpperCase())
+        .where((code) => code.isNotEmpty)
+        .toList();
 
-    final ids = icaoCodes.join(',');
-    final uri = Uri.parse(
-      'https://aviationweather.gov/api/data/metar?ids=$ids&format=geojson&taf=false&hours=0&_=${DateTime.now().millisecondsSinceEpoch}',
+    if (validCodes.isEmpty) return {};
+
+    final ids = validCodes.join(',');
+    final uri = Uri.https(
+      'aviationweather.gov',
+      '/api/data/metar',
+      {
+        'ids': ids,
+        'format': 'geojson',
+        'hours': '2',
+      },
     );
 
     try {
-      final response = await http.get(uri);
+      final response = await http.get(
+        uri,
+        headers: const {
+          'User-Agent': 'SkyAware/1.0',
+          'Accept': 'application/geo+json, application/json',
+        },
+      ).timeout(const Duration(seconds: 12));
       final Map<String, String> results = {};
 
       if (response.statusCode == 200) {

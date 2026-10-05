@@ -56,9 +56,8 @@ class _MapsState extends State<Maps> {
     final themeController = Provider.of<ThemeController>(context);
     final isDark = themeController.isDarkMode;
 
-    final String tileUrl = isDark 
-        ? 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png'
-        : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+    final String tileUrl =
+        'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
     // 1. Shared UI Logic for Route Markers
     List<Marker> buildRoutePointMarkers() {
@@ -137,7 +136,6 @@ class _MapsState extends State<Maps> {
           children: [
             TileLayer(
               urlTemplate: tileUrl,
-              subdomains: const ['a', 'b', 'c'],
               userAgentPackageName: 'com.andy.skyaware',
             ),
 

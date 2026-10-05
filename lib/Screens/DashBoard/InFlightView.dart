@@ -1818,9 +1818,8 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
     // Note: themeController.isDarkMode is still used for tileUrl logic or could use theme.brightness
     final isDark = theme.brightness == Brightness.dark;
 
-    final String tileUrl = isDark 
-        ? 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png'
-        : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+    final String tileUrl =
+        'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
     // Calculate Route Stats for UI
     final legData = _calculateLegStats();
@@ -1859,26 +1858,27 @@ class _InFlightViewState extends State<InFlightView> with SingleTickerProviderSt
                    if (_isFollowing) {
                      setState(() => _isFollowing = false);
                    }
-                  _mapDebounce?.cancel();
-                  _mapDebounce = Timer(const Duration(milliseconds: 500), () {
-                    if (!mounted) return;
-                    
-                    if (_currentPosition != null && _currentAltitudeFeet != null && _showTerrainAnalysis) {
-                      final planePos = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
-                      _scanTerrainSurroundings(planePos, _currentAltitudeFeet!);
-                    }
-                    
-                    if (_showAirports) {
-                      _updateAirportLayer();
-                    }
-                  });
                 }
+                
+                // Debounce map movement regardless of gesture to always update airports and terrain
+                _mapDebounce?.cancel();
+                _mapDebounce = Timer(const Duration(milliseconds: 500), () {
+                  if (!mounted) return;
+                  
+                  if (_currentPosition != null && _currentAltitudeFeet != null && _showTerrainAnalysis) {
+                    final planePos = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
+                    _scanTerrainSurroundings(planePos, _currentAltitudeFeet!);
+                  }
+                  
+                  if (_showAirports) {
+                    _updateAirportLayer();
+                  }
+                });
               },
             ),
             children: [
               TileLayer(
                 urlTemplate: tileUrl,
-                subdomains: const ['a', 'b', 'c'],
                 userAgentPackageName: 'com.andy.skyaware',
               ),
               PolygonLayer(

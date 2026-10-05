@@ -93,7 +93,7 @@ class _DashBoardState extends State<DashBoard> {
 
     // Subscribe to Map Events
     _mapEventSubscription = _mapController.mapEventStream.listen((event) {
-      if (event is MapEventMoveEnd) {
+      if (event is MapEventMove || event is MapEventMoveEnd) {
         _mapDebounce?.cancel();
         _mapDebounce = Timer(const Duration(milliseconds: 500), () {
           _updateVisibleAirports();
